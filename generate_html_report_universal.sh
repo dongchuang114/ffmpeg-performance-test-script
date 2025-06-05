@@ -76,6 +76,11 @@ OS_VERSION=$(grep "OS版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 
 KERNEL_VERSION=$(grep "内核版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 MEMORY_CHANNELS=$(grep "内存通道数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 
+# 清理和格式化变量
+clean_number() {
+    echo "$1" | grep -oE '[0-9]+' || echo "0"
+}
+
 # 清理变量值，确保是数字
 CPU_CORES=$(echo "$CPU_CORES" | grep -oE '[0-9]+' || echo "0")
 CPU_SOCKETS=$(echo "$CPU_SOCKETS" | grep -oE '[0-9]+' || echo "1")
@@ -537,36 +542,37 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         </div>
         
         <div class="summary-cards">
-            <div class="card">
-                <h3><i>⚙️</i> 系统配置详情</h3>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <div class="config-label">CPU架构</div>
-                        <div class="config-value">${CPU_DISPLAY}</div>
-                    </div>
-                    <div class="config-item">
-                        <div class="config-label">CPU型号</div>
-                        <div class="config-value">${CPU_MODEL}</div>
-                    </div>
-                    <div class="config-item">
-                        <div class="config-label">内存配置</div>
-                        <div class="config-value">${MEMORY_DISPLAY}</div>
-                    </div>
-                    <div class="config-item">
-                        <div class="config-label">操作系统</div>
-                        <div class="config-value">${OS_DISPLAY}</div>
-                    </div>
-                    <div class="config-item">
-                        <div class="config-label">内核版本</div>
-                        <div class="config-value">${KERNEL_VERSION}</div>
-                    </div>
-                    <div class="config-item">
-                        <div class="config-label">FFmpeg版本</div>
-                        <div class="config-value">${FFMPEG_VERSION}</div>
-                    </div>
+            <h3><i>⚙️</i> 系统配置详情</h3>
+            
+            <div class="hardware-info">
+                <div class="info-row">
+                    <div class="info-label">CPU架构</div>
+                    <div class="info-value">'$CPU_ARCH_DISPLAY'</div>
                 </div>
+                <div class="info-row">
+                    <div class="info-label">CPU型号</div>
+                    <div class="info-value">'$CPU_MODEL'</div>
                 </div>
-
+                <div class="info-row">
+                    <div class="info-label">内存配置</div>
+                    <div class="info-value">'$MEMORY_DISPLAY'</div>
+                </div>
+            </div>
+            
+            <div class="software-info">
+                <div class="info-row">
+                    <div class="info-label">操作系统</div>
+                    <div class="info-value">'$OS_NAME' '$OS_VERSION'</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">内核版本</div>
+                    <div class="info-value">'$KERNEL_VERSION'</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">FFmpeg版本</div>
+                    <div class="info-value">'$FFMPEG_VERSION'</div>
+                </div>
+            </div>
             <div class="card">
                 <h3><i>📊</i> 测试统计</h3>
                 <div class="value">${TEST_COUNT}</div>
