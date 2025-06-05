@@ -71,6 +71,8 @@ SKIP_AV1=true                 # 是否跳过AV1编码测试
   --enable-hardware \
   input.mp4 ./results
 
+# 可自定义长度视频做为输入视频源
+ffmpeg -f lavfi -i "testsrc=duration=610:size=1920x1080:rate=30" -c:v libx264 -preset ultrafast test_10min.mp4
 
 4. 对比测试
 
@@ -82,10 +84,12 @@ cat comparison_metrics.csv
 cat benchmark_results.csv
 
 # 3. 查看HTML报告
-# 在服务器上启动HTTP服务器查看
+# 在服务器上启动HTTP服务器查看，在ffmpeg_benchmark_xxx中运行下面命令
 python3 -m http.server 8000
 # 浏览器访问: http://localhost:8000/performance_report.html
-
+# 远端终端访问,先打通隧道：
+ssh -N -L 18000:localhost:8000 user@server_ip
+# 远端终端浏览器访问：http://localhost:18000/performance_report.html
 
 预期输出文件
 
