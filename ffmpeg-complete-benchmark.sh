@@ -127,32 +127,181 @@ EOF
     echo "" >> "$SYSTEM_INFO_FILE"
     
     # 内存信息
-    cat >> "$SYSTEM_INFO_FILE" << EOF
+#    cat >> "$SYSTEM_INFO_FILE" << EOF
+#二、内存信息
+#----------------------------------------
+#EOF
+#    free -h 2>/dev/null >> "$SYSTEM_INFO_FILE"
+#    echo "" >> "$SYSTEM_INFO_FILE"
+#    
+#    echo "详细内存信息:" >> "$SYSTEM_INFO_FILE"
+#    grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree" /proc/meminfo 2>/dev/null >> "$SYSTEM_INFO_FILE"
+#    echo "" >> "$SYSTEM_INFO_FILE"
+#    
+#    # 内存通道信息
+#    cat >> "$SYSTEM_INFO_FILE" << EOF
+#三、内存通道信息
+#----------------------------------------
+#EOF
+#    if command -v dmidecode &> /dev/null && [ "$EUID" -eq 0 ]; then
+#        dmidecode -t memory 2>/dev/null | grep -E "Size:|Type:|Speed:|Locator:" | head -20 2>/dev/null >> "$SYSTEM_INFO_FILE" || echo "需要root权限获取内存通道信息" >> "$SYSTEM_INFO_FILE"
+#    else
+#        echo "使用lshw尝试获取内存信息:" >> "$SYSTEM_INFO_FILE"
+#        lshw -short -C memory 2>/dev/null | head -20 2>/dev/null >> "$SYSTEM_INFO_FILE" || echo "无法获取详细内存通道信息" >> "$SYSTEM_INFO_FILE"
+#    fi
+#    echo "" >> "$SYSTEM_INFO_FILE"
+#    
+#    # 系统架构
+#    cat >> "$SYSTEM_INFO_FILE" << EOF
+# 内存信息
+cat >> "$SYSTEM_INFO_FILE" << EOF
 二、内存信息
 ----------------------------------------
 EOF
-    free -h 2>/dev/null >> "$SYSTEM_INFO_FILE"
-    echo "" >> "$SYSTEM_INFO_FILE"
-    
-    echo "详细内存信息:" >> "$SYSTEM_INFO_FILE"
-    grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree" /proc/meminfo 2>/dev/null >> "$SYSTEM_INFO_FILE"
-    echo "" >> "$SYSTEM_INFO_FILE"
-    
-    # 内存通道信息
-    cat >> "$SYSTEM_INFO_FILE" << EOF
-三、内存通道信息
+free -h 2>/dev/null >> "$SYSTEM_INFO_FILE"
+echo "" >> "$SYSTEM_INFO_FILE"
+
+echo "详细内存信息:" >> "$SYSTEM_INFO_FILE"
+grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree" /proc/meminfo 2>/dev/null >> "$SYSTEM_INFO_FILE"
+echo "" >> "$SYSTEM_INFO_FILE"
+
+# 新增：内存通道信息
+cat >> "$SYSTEM_INFO_FILE" << EOF
+三、内存通道和插槽信息
 ----------------------------------------
 EOF
-    if command -v dmidecode &> /dev/null && [ "$EUID" -eq 0 ]; then
-        dmidecode -t memory 2>/dev/null | grep -E "Size:|Type:|Speed:|Locator:" | head -20 2>/dev/null >> "$SYSTEM_INFO_FILE" || echo "需要root权限获取内存通道信息" >> "$SYSTEM_INFO_FILE"
-    else
-        echo "使用lshw尝试获取内存信息:" >> "$SYSTEM_INFO_FILE"
-        lshw -short -C memory 2>/dev/null | head -20 2>/dev/null >> "$SYSTEM_INFO_FILE" || echo "无法获取详细内存通道信息" >> "$SYSTEM_INFO_FILE"
-    fi
-    echo "" >> "$SYSTEM_INFO_FILE"
+
+# 方法1: 使用dmidecode获取详细内存信息
+if command -v dmidecode &> /dev/null && [ "$EUID" -eq 0 ]; then
+    echo "使用dmidecode获取内存信息:" >> "$SYSTEM_INFO_FILE"
     
-    # 系统架构
-    cat >> "$SYSTEM_INFO_FILE" << EOF
+    # 获取内存设备总数
+    TOTAL_MEMORY_DEVICES=$(dmidecode -t memory 2>/dev/null | grep -c "^Memory Device$" 2>/dev/null || echo 0)
+    echo "总内存设备数: $TOTAL_MEMORY_DEVICES" >> "$SYSTEM_INFO_FILE"
+    
+    # 获取已安装的内存设备
+    INSTALLED_MEMORY=$(dmidecode -t memory 2>/dev/null | grep -A5 "^Memory Device$" | grep "Size:" | grep -v "No Module Installed" | grep -v "No Module" 2>/dev/null)
+    INSTALLED_COUNT=$(echo "$INSTALLED_MEMORY" | wc -l 2>/dev/null || echo 0)
+    echo "已安装内存设备: $INSTALLED_COUNT" >> "$SYSTEM_INFO_FILE"
+    
+    # 显示已安装的内存详细信息
+    if [ "$INSTALLED_COUNT" -gt 0 ]; then
+        echo "" >> "$SYSTEM_INFO_FILE"
+        echo "已安装内存详情:" >> "$SYSTEM_INFO_FILE"
+        echo "----------------" >> "$SYSTEM_INFO_FILE"
+        
+        # 使用awk解析dmidecode输出
+        dmidecode -t memory 2>/dev/null | awk '
+        BEGIN { RS = "Memory Device"; device = 0; }
+        NR > 1 {
+            size = ""; type = ""; speed = ""; locator = ""; bank = "";
+            split($0, lines, "\n");
+            for (i in lines) {
+                if (lines[i] ~ /^\tSize: /) {
+                    gsub(/^\tSize: /, "", lines[i]);
+                    if (lines[i] !~ /No Module/) {
+                        size = lines[i];
+                        device++;
+                    }
+                }
+                if (lines[i] ~ /^\tType: /) {
+                    gsub(/^\tType: /, "", lines[i]);
+                    type = lines[i];
+                }
+                if (lines[i] ~ /^\tSpeed: /) {
+                    gsub(/^\tSpeed: /, "", lines[i]);
+                    speed = lines[i];
+                }
+                if (lines[i] ~ /^\tLocator: /) {
+                    gsub(/^\tLocator: /, "", lines[i]);
+                    locator = lines[i];
+                }
+                if (lines[i] ~ /^\tBank Locator: /) {
+                    gsub(/^\tBank Locator: /, "", lines[i]);
+                    bank = lines[i];
+                }
+            }
+            if (size != "" && size !~ /No Module/) {
+                print "内存设备 #" device ":";
+                print "  大小: " size;
+                print "  类型: " type;
+                print "  速度: " speed;
+                print "  位置: " locator;
+                if (bank != "") print "  通道: " bank;
+                print "";
+            }
+        }' >> "$SYSTEM_INFO_FILE" 2>/dev/null
+        
+        # 统计不同的内存通道/插槽
+        echo "内存通道/插槽统计:" >> "$SYSTEM_INFO_FILE"
+        echo "------------------" >> "$SYSTEM_INFO_FILE"
+        
+        # 提取所有不同的Bank Locator
+        dmidecode -t memory 2>/dev/null | grep "Bank Locator:" | sed 's/.*Bank Locator://' | sort -u | while read -r bank; do
+            if [ -n "$bank" ]; then
+                COUNT=$(dmidecode -t memory 2>/dev/null | grep -B2 -A2 "Bank Locator: $bank" | grep -c "Size:.*[0-9]" 2>/dev/null || echo 0)
+                echo "  通道 $bank: $COUNT 个内存设备" >> "$SYSTEM_INFO_FILE"
+            fi
+        done
+        
+        # 计算总通道数
+        TOTAL_CHANNELS=$(dmidecode -t memory 2>/dev/null | grep "Bank Locator:" | sed 's/.*Bank Locator://' | sort -u | wc -l 2>/dev/null || echo 0)
+        echo "" >> "$SYSTEM_INFO_FILE"
+        echo "总内存通道数: $TOTAL_CHANNELS" >> "$SYSTEM_INFO_FILE"
+        
+        # 将通道数添加到comparison_metrics.csv
+        if [ -f "$OUTPUT_DIR/comparison_metrics.csv" ]; then
+            if ! grep -q "内存通道数" "$OUTPUT_DIR/comparison_metrics.csv"; then
+                echo "内存,内存通道数,$TOTAL_CHANNELS" >> "$OUTPUT_DIR/comparison_metrics.csv"
+            fi
+        fi
+    else
+        echo "未检测到已安装的内存设备" >> "$SYSTEM_INFO_FILE"
+    fi
+    
+# 方法2: 使用lshw
+elif command -v lshw &> /dev/null; then
+    echo "使用lshw获取内存信息:" >> "$SYSTEM_INFO_FILE"
+    
+    MEMORY_INFO=$(lshw -short -C memory 2>/dev/null | head -20 2>/dev/null)
+    if [ -n "$MEMORY_INFO" ]; then
+        echo "$MEMORY_INFO" >> "$SYSTEM_INFO_FILE"
+        
+        # 尝试获取更详细的信息
+        echo "" >> "$SYSTEM_INFO_FILE"
+        echo "内存插槽详情:" >> "$SYSTEM_INFO_FILE"
+        lshw -C memory 2>/dev/null | grep -A3 "slot:" | while IFS= read -r line; do
+            if [[ "$line" =~ slot: ]]; then
+                SLOT=$(echo "$line" | sed 's/.*slot://' | xargs)
+                echo "插槽: $SLOT" >> "$SYSTEM_INFO_FILE"
+            elif [[ "$line" =~ size: ]]; then
+                SIZE=$(echo "$line" | sed 's/.*size://' | xargs)
+                echo "  大小: $SIZE" >> "$SYSTEM_INFO_FILE"
+            elif [[ "$line" =~ clock: ]]; then
+                CLOCK=$(echo "$line" | sed 's/.*clock://' | xargs)
+                echo "  频率: $CLOCK" >> "$SYSTEM_INFO_FILE"
+            fi
+        done 2>/dev/null || echo "无法获取详细插槽信息" >> "$SYSTEM_INFO_FILE"
+    else
+        echo "无法获取详细内存通道信息" >> "$SYSTEM_INFO_FILE"
+    fi
+    
+    # 估算内存通道数
+    SLOT_COUNT=$(lshw -C memory 2>/dev/null | grep -c "slot:" 2>/dev/null || echo 0)
+    echo "" >> "$SYSTEM_INFO_FILE"
+    echo "检测到的内存插槽数: $SLOT_COUNT" >> "$SYSTEM_INFO_FILE"
+    
+    if [ -f "$OUTPUT_DIR/comparison_metrics.csv" ]; then
+        if ! grep -q "内存通道数" "$OUTPUT_DIR/comparison_metrics.csv"; then
+            echo "内存,内存插槽数,$SLOT_COUNT" >> "$OUTPUT_DIR/comparison_metrics.csv"
+        fi
+    fi
+else
+    echo "无法获取详细内存通道信息（需要dmidecode或lshw工具）" >> "$SYSTEM_INFO_FILE"
+    echo "建议安装: sudo apt-get install dmidecode 或 sudo apt-get install lshw" >> "$SYSTEM_INFO_FILE"
+fi
+
+echo "" >> "$SYSTEM_INFO_FILE" << EOF
 四、系统架构信息
 ----------------------------------------
 EOF
