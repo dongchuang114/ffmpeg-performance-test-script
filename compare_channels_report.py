@@ -272,8 +272,6 @@ res_vp9 = [
     ('480p 5M', 'encode_libvpx-vp9_good_854x480_5000k'),
     ('720p 2M', 'encode_libvpx-vp9_good_1280x720_2000k'),
     ('720p 5M', 'encode_libvpx-vp9_good_1280x720_5000k'),
-    ('1080p 2M', 'encode_libvpx-vp9_good_1920x1080_2000k'),
-    ('1080p 5M', 'encode_libvpx-vp9_good_1920x1080_5000k'),
 ]
 chart_vp9 = svg_grouped_bar(
     [[get_speed(c['data'], t[1]) for t in res_vp9] for c in configs],
