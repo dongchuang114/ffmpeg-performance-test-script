@@ -14,12 +14,40 @@ DIRS_sorted = [
 ]
 
 LABEL_MAP = {
-    '24_channel':  '24-ch (1511GB)',
-    '12_channel':  '12-ch (755GB)',
-    '8_channel':   '8-ch (503GB)',
-    '4_channel':   '4-ch (251GB)',
-    '2_channel':   '2-ch (126GB)',
+    '24_channel': '24-ch (1511GB)',
+    '12_channel': '12-ch (755GB)',
+    '8_channel':  '8-ch (503GB)',
+    '4_channel':  '4-ch (251GB)',
+    '2_channel':  '2-ch (126GB)',
 }
+
+# Memory hardware info (from dmidecode on 10.83.32.80)
+# Samsung DDR5-4800 64GB RDIMM, 1.1V
+# Theoretical BW per channel = 4800 MT/s x 8 bytes = 38.4 GB/s
+MEM_HW = {
+    'type':        'DDR5',
+    'speed':       '4800 MT/s',
+    'configured':  '4800 MT/s',
+    'manufacturer':'Samsung',
+    'part_number': 'M321R8GA0BB0-CQKVG',
+    'dimm_size':   '64 GB',
+    'voltage':     '1.1 V',
+    'ecc':         'Multi-bit ECC',
+    'form_factor': 'RDIMM (Registered Buffered)',
+    'bw_per_ch':   38.4,   # GB/s per channel
+}
+
+# Channel count and DIMM count per config
+CH_INFO = {
+    '24_channel': {'ch': 24, 'dimms': 24},
+    '12_channel': {'ch': 12, 'dimms': 12},
+    '8_channel':  {'ch':  8, 'dimms':  8},
+    '4_channel':  {'ch':  4, 'dimms':  4},
+    '2_channel':  {'ch':  2, 'dimms':  2},
+}
+
+COLORS = ['#58a6ff', '#3fb950', '#f78166', '#d2a8ff', '#ffa657']
+
 
 def infer_label(dirname):
     for k, v in LABEL_MAP.items():
@@ -27,15 +55,22 @@ def infer_label(dirname):
             return v
     return dirname
 
-COLORS = ['#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657','#79c0ff']
+
+def infer_ch_key(dirname):
+    for k in CH_INFO:
+        if k in dirname:
+            return k
+    return None
+
 
 def parse_speed(val):
     if not val:
         return 0.0
     try:
-        return float(val.replace('x','').strip())
+        return float(val.replace('x', '').strip())
     except:
         return 0.0
+
 
 def load_csv(path):
     rows = {}
@@ -44,18 +79,28 @@ def load_csv(path):
     with open(path, encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            name = row.get('测试名称','').strip()
+            name = row.get('测试名称', '').strip()
             if name:
                 rows[name] = row
     return rows
+
 
 configs = []
 for d in DIRS_sorted:
     csv_path = os.path.join(BASE, d, 'benchmark_results.csv')
     data = load_csv(csv_path)
-    configs.append({'label': infer_label(d), 'data': data})
+    ch_key = infer_ch_key(d)
+    ch_info = CH_INFO.get(ch_key, {'ch': 0, 'dimms': 0})
+    configs.append({
+        'label':  infer_label(d),
+        'data':   data,
+        'ch':     ch_info['ch'],
+        'dimms':  ch_info['dimms'],
+        'bw':     round(ch_info['ch'] * MEM_HW['bw_per_ch'], 1),
+    })
 
 cfg_labels = [c['label'] for c in configs]
+
 
 def get_speed(data, name):
     row = data.get(name)
@@ -63,11 +108,13 @@ def get_speed(data, name):
         return 0.0
     return parse_speed(row.get('编码速度(x)', '0'))
 
+
 def get_realtime(data, name):
     row = data.get(name)
     if not row:
         return 0.0
     return parse_speed(row.get('实时倍数(x)', '0'))
+
 
 def pct(val, base):
     if base == 0:
@@ -75,10 +122,12 @@ def pct(val, base):
     p = (val - base) / base * 100
     return f'{p:+.1f}%'
 
+
 def pct_color(val, base):
     if base == 0:
         return '#8b949e'
     return '#3fb950' if val >= base else '#f78166'
+
 
 # ---- SVG grouped bar ----
 def svg_grouped_bar(groups, x_labels, series_labels, colors, width=980, height=380, ylabel='编码速度 (x)'):
@@ -122,12 +171,13 @@ def svg_grouped_bar(groups, x_labels, series_labels, colors, width=980, height=3
 
     lx0 = PL
     for si, cl in enumerate(series_labels):
-        lx = lx0 + si * 140
+        lx = lx0 + si * 150
         c = colors[si % len(colors)]
         out.append(f'<rect x="{lx}" y="{height-18}" width="12" height="12" fill="{c}" rx="2"/>')
         out.append(f'<text x="{lx+16}" y="{height-7}" fill="#c9d1d9" font-size="11">{cl}</text>')
     out.append('</svg>')
     return ''.join(out)
+
 
 # ---- SVG multi-line ----
 def svg_line_multi(series_list, x_labels, series_labels, colors, width=700, height=300, ylabel='编码速度 (x)'):
@@ -169,14 +219,15 @@ def svg_line_multi(series_list, x_labels, series_labels, colors, width=700, heig
             out.append(f'<circle cx="{p[0]:.1f}" cy="{p[1]:.1f}" r="4" fill="{col}" stroke="#161b22" stroke-width="1.5"/>')
 
     for si, cl in enumerate(series_labels):
-        lx = PL + si * 115
+        lx = PL + si * 120
         c = colors[si % len(colors)]
         out.append(f'<rect x="{lx}" y="{height-16}" width="10" height="10" fill="{c}" rx="2"/>')
         out.append(f'<text x="{lx+14}" y="{height-6}" fill="#c9d1d9" font-size="10">{cl}</text>')
     out.append('</svg>')
     return ''.join(out)
 
-# ---- Build comparison table ----
+
+# ---- Comparison table ----
 def build_table(test_name, display_name):
     base_v = get_speed(configs[0]['data'], test_name)
     rows_html = ''
@@ -190,14 +241,15 @@ def build_table(test_name, display_name):
 <tbody>{rows_html}</tbody>
 </table>'''
 
+
 # ---- Generate charts ----
 res_x264 = [
     ('480p 2M', 'encode_libx264_medium_854x480_2000k'),
     ('480p 5M', 'encode_libx264_medium_854x480_5000k'),
     ('720p 2M', 'encode_libx264_medium_1280x720_2000k'),
     ('720p 5M', 'encode_libx264_medium_1280x720_5000k'),
-    ('1080p 2M','encode_libx264_medium_1920x1080_2000k'),
-    ('1080p 5M','encode_libx264_medium_1920x1080_5000k'),
+    ('1080p 2M', 'encode_libx264_medium_1920x1080_2000k'),
+    ('1080p 5M', 'encode_libx264_medium_1920x1080_5000k'),
 ]
 chart_x264 = svg_grouped_bar(
     [[get_speed(c['data'], t[1]) for t in res_x264] for c in configs],
@@ -208,8 +260,8 @@ res_x265 = [
     ('480p 5M', 'encode_libx265_medium_854x480_5000k'),
     ('720p 2M', 'encode_libx265_medium_1280x720_2000k'),
     ('720p 5M', 'encode_libx265_medium_1280x720_5000k'),
-    ('1080p 2M','encode_libx265_medium_1920x1080_2000k'),
-    ('1080p 5M','encode_libx265_medium_1920x1080_5000k'),
+    ('1080p 2M', 'encode_libx265_medium_1920x1080_2000k'),
+    ('1080p 5M', 'encode_libx265_medium_1920x1080_5000k'),
 ]
 chart_x265 = svg_grouped_bar(
     [[get_speed(c['data'], t[1]) for t in res_x265] for c in configs],
@@ -220,8 +272,8 @@ res_vp9 = [
     ('480p 5M', 'encode_libvpx-vp9_good_854x480_5000k'),
     ('720p 2M', 'encode_libvpx-vp9_good_1280x720_2000k'),
     ('720p 5M', 'encode_libvpx-vp9_good_1280x720_5000k'),
-    ('1080p 2M','encode_libvpx-vp9_good_1920x1080_2000k'),
-    ('1080p 5M','encode_libvpx-vp9_good_1920x1080_5000k'),
+    ('1080p 2M', 'encode_libvpx-vp9_good_1920x1080_2000k'),
+    ('1080p 5M', 'encode_libvpx-vp9_good_1920x1080_5000k'),
 ]
 chart_vp9 = svg_grouped_bar(
     [[get_speed(c['data'], t[1]) for t in res_vp9] for c in configs],
@@ -233,21 +285,21 @@ chart_dec = svg_grouped_bar(
     ['H.264', 'H.265', 'VP9'], cfg_labels, COLORS,
     width=700, height=320, ylabel='解码速度 (x)')
 
-flt_names = ['filter_scale_720p','filter_scale_1080p','filter_horizontal_flip','filter_vertical_flip','filter_boxblur']
+flt_names = ['filter_scale_720p', 'filter_scale_1080p', 'filter_horizontal_flip', 'filter_vertical_flip', 'filter_boxblur']
 chart_flt = svg_grouped_bar(
     [[get_speed(c['data'], t) for t in flt_names] for c in configs],
-    ['Scale 720p','Scale 1080p','H-Flip','V-Flip','Boxblur'], cfg_labels, COLORS,
+    ['Scale 720p', 'Scale 1080p', 'H-Flip', 'V-Flip', 'Boxblur'], cfg_labels, COLORS,
     width=900, height=340, ylabel='速度 (x)')
 
-thread_keys = ['threads_1','threads_2','threads_4','threads_8','threads_16','threads_32','threads_64']
+thread_keys = ['threads_1', 'threads_2', 'threads_4', 'threads_8', 'threads_16', 'threads_32', 'threads_64']
 chart_threads = svg_line_multi(
     [[get_speed(c['data'], k) for k in thread_keys] for c in configs],
-    ['1','2','4','8','16','32','64'], cfg_labels, COLORS)
+    ['1', '2', '4', '8', '16', '32', '64'], cfg_labels, COLORS)
 
 tbl_x264_480  = build_table('encode_libx264_medium_854x480_2000k',  'libx264 480p 2Mbps 编码速度')
 tbl_x264_720  = build_table('encode_libx264_medium_1280x720_2000k', 'libx264 720p 2Mbps 编码速度')
-tbl_x264_1080 = build_table('encode_libx264_medium_1920x1080_2000k','libx264 1080p 2Mbps 编码速度')
-tbl_x265_1080 = build_table('encode_libx265_medium_1920x1080_2000k','libx265 1080p 2Mbps 编码速度')
+tbl_x264_1080 = build_table('encode_libx264_medium_1920x1080_2000k', 'libx264 1080p 2Mbps 编码速度')
+tbl_x265_1080 = build_table('encode_libx265_medium_1920x1080_2000k', 'libx265 1080p 2Mbps 编码速度')
 tbl_dec_264   = build_table('decode_libx264', 'H.264 解码速度')
 tbl_dec_265   = build_table('decode_libx265', 'H.265 解码速度')
 tbl_threads64 = build_table('threads_64', 'threads=64 1080p 编码速度')
@@ -259,6 +311,22 @@ b_dec_264   = get_speed(base_data, 'decode_libx264')
 b_dec_265   = get_speed(base_data, 'decode_libx265')
 worst_data  = configs[-1]['data']
 w_x264_1080 = get_speed(worst_data, 'encode_libx264_medium_1920x1080_2000k')
+
+# Build memory config table rows
+mem_config_rows = ''
+for c in configs:
+    bw_str = f'{c["bw"]:.1f} GB/s'
+    base_bw = configs[0]['bw']
+    bw_pct = pct(c['bw'], base_bw)
+    bw_color = pct_color(c['bw'], base_bw)
+    mem_config_rows += f'''<tr>
+      <td><strong>{c["label"]}</strong></td>
+      <td style="text-align:center">{c["ch"]}</td>
+      <td style="text-align:center">{c["dimms"]}</td>
+      <td style="text-align:center">{c["dimms"]} x {MEM_HW["dimm_size"]}</td>
+      <td style="font-family:monospace;text-align:center">{bw_str}</td>
+      <td style="color:{bw_color};font-family:monospace;text-align:center">{bw_pct}</td>
+    </tr>'''
 
 html = f'''<!DOCTYPE html>
 <html lang="zh-CN">
@@ -288,7 +356,12 @@ tr:hover td {{ background: #1c2128; }}
 .card h4 {{ color: #8b949e; font-size: 0.82rem; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }}
 .card .val {{ font-size: 1.8rem; font-weight: 700; color: #58a6ff; font-family: monospace; }}
 .card .sub {{ color: #8b949e; font-size: 0.8rem; margin-top: 6px; }}
+.hw-grid {{ display: grid; grid-template-columns: repeat(auto-fill,minmax(200px,1fr)); gap: 12px; margin: 16px 0 24px; }}
+.hw-item {{ background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; }}
+.hw-item .label {{ color: #8b949e; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }}
+.hw-item .value {{ color: #e6edf3; font-size: 0.95rem; font-family: monospace; font-weight: 600; }}
 .two-col {{ display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }}
+.bw-badge {{ display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-family: monospace; font-weight: 600; }}
 @media(max-width:900px) {{ .two-col {{ grid-template-columns: 1fr; }} .section {{ padding: 24px; }} }}
 </style>
 </head>
@@ -297,34 +370,74 @@ tr:hover td {{ background: #1c2128; }}
 <div class="header">
   <h1>FFmpeg 内存 Channel 配置性能对比报告</h1>
   <div class="meta">
-    <div>CPU: AMD EPYC 9T24 96-Core Processor &nbsp;|&nbsp; 线程数: 384</div>
+    <div>CPU: AMD EPYC 9T24 96-Core Processor &nbsp;|&nbsp; 线程数: 384 &nbsp;|&nbsp; NUMA: 2 节点</div>
+    <div>内存: Samsung DDR5-4800 64GB RDIMM &nbsp;|&nbsp; ECC: Multi-bit &nbsp;|&nbsp; 电压: 1.1V</div>
     <div>测试配置: 2-ch / 4-ch / 8-ch / 12-ch / 24-ch &nbsp;|&nbsp; 通过 BIOS 关闭内存通道</div>
-    <div>基准配置: 24-channel (1511.33 GB) &nbsp;|&nbsp; FFmpeg 4.4.2</div>
+    <div>基准配置: 24-channel (1511.33 GB, 921.6 GB/s 理论带宽) &nbsp;|&nbsp; FFmpeg 4.4.2</div>
   </div>
 </div>
 
 <nav>
+  <a href="#hw">硬件规格</a>
   <a href="#overview">总览</a>
-  <a href="#x264">libx264 编码</a>
-  <a href="#x265">libx265 编码</a>
-  <a href="#vp9">VP9 编码</a>
+  <a href="#x264">libx264</a>
+  <a href="#x265">libx265</a>
+  <a href="#vp9">VP9</a>
   <a href="#decode">解码</a>
   <a href="#filter">滤镜</a>
   <a href="#threads">线程扩展</a>
 </nav>
 
+<div class="section" id="hw">
+  <h2>内存硬件规格</h2>
+
+  <h3>DIMM 规格参数</h3>
+  <div class="hw-grid">
+    <div class="hw-item"><div class="label">内存类型</div><div class="value">{MEM_HW["type"]}</div></div>
+    <div class="hw-item"><div class="label">速率</div><div class="value">{MEM_HW["speed"]}</div></div>
+    <div class="hw-item"><div class="label">配置速率</div><div class="value">{MEM_HW["configured"]}</div></div>
+    <div class="hw-item"><div class="label">厂商</div><div class="value">{MEM_HW["manufacturer"]}</div></div>
+    <div class="hw-item"><div class="label">料号 (Part Number)</div><div class="value">{MEM_HW["part_number"]}</div></div>
+    <div class="hw-item"><div class="label">单条容量</div><div class="value">{MEM_HW["dimm_size"]}</div></div>
+    <div class="hw-item"><div class="label">工作电压</div><div class="value">{MEM_HW["voltage"]}</div></div>
+    <div class="hw-item"><div class="label">ECC 类型</div><div class="value">{MEM_HW["ecc"]}</div></div>
+    <div class="hw-item"><div class="label">形态</div><div class="value">{MEM_HW["form_factor"]}</div></div>
+    <div class="hw-item"><div class="label">单 Channel 理论带宽</div><div class="value">{MEM_HW["bw_per_ch"]} GB/s</div></div>
+  </div>
+
+  <h3>各配置内存通道与理论带宽</h3>
+  <p style="color:#8b949e;font-size:0.85rem;margin-bottom:12px">
+    理论带宽 = Channel 数 &times; 4800 MT/s &times; 8 bytes = Channel 数 &times; 38.4 GB/s
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>配置</th>
+        <th style="text-align:center">激活 Channel 数</th>
+        <th style="text-align:center">安装 DIMM 数</th>
+        <th style="text-align:center">总容量</th>
+        <th style="text-align:center">理论峰值带宽</th>
+        <th style="text-align:center">vs 24-ch 带宽</th>
+      </tr>
+    </thead>
+    <tbody>
+      {mem_config_rows}
+    </tbody>
+  </table>
+</div>
+
 <div class="section" id="overview">
-  <h2>总览概要</h2>
+  <h2>性能总览</h2>
   <div class="summary-grid">
     <div class="card">
       <h4>24-ch 基准 libx264 1080p</h4>
       <div class="val">{b_x264_1080:.2f}x</div>
-      <div class="sub">实时速度 {get_realtime(base_data,"encode_libx264_medium_1920x1080_2000k"):.2f}x</div>
+      <div class="sub">实时速度 {get_realtime(base_data,"encode_libx264_medium_1920x1080_2000k"):.2f}x &nbsp;|&nbsp; BW: {configs[0]["bw"]:.1f} GB/s</div>
     </div>
     <div class="card">
       <h4>2-ch 最低 libx264 1080p</h4>
       <div class="val" style="color:#f78166">{w_x264_1080:.2f}x</div>
-      <div class="sub">vs 24-ch: {pct(w_x264_1080, b_x264_1080)}</div>
+      <div class="sub">vs 24-ch: {pct(w_x264_1080, b_x264_1080)} &nbsp;|&nbsp; BW: {configs[-1]["bw"]:.1f} GB/s</div>
     </div>
     <div class="card">
       <h4>24-ch H.264 解码速度</h4>
@@ -337,7 +450,7 @@ tr:hover td {{ background: #1c2128; }}
       <div class="sub">实时速度 {get_realtime(base_data,"decode_libx265"):.2f}x</div>
     </div>
   </div>
-  <h3>各配置 libx264 1080p 2Mbps 综合对比</h3>
+  <h3>libx264 1080p 2Mbps 综合对比</h3>
   {tbl_x264_1080}
 </div>
 
