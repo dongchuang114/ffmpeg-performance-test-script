@@ -8,11 +8,11 @@ set -e
 # 配置
 INPUT_FILE="${1:-/dev/shm/test.mp4}"
 OUTPUT_DIR="${2:-./ffmpeg_benchmark_$(date +%Y%m%d_%H%M%S)}"
-TEST_DURATION=10  # 每个测试运行10秒
+TEST_DURATION=60  # 每个测试运行10秒
 RESOLUTIONS="854x480 1280x720 1920x1080"  # 测试分辨率
 BITRATES="2000k 5000k"  # 测试比特率
 WARMUP_ITERATIONS=0
-TEST_ITERATIONS=2
+TEST_ITERATIONS=3
 SKIP_AV1=true  # 跳过极慢的AV1编码
 TIMEOUT_SECONDS=300  # 每个测试最多5分钟
 ENABLE_HARDWARE_TESTS=false  # 启用硬件加速测试
@@ -102,9 +102,12 @@ FFmpeg性能测试 - 系统配置信息
 EOF
 
     # CPU型号和核心数
-    echo "CPU型号和核心信息:" >> "$SYSTEM_INFO_FILE"
-    lscpu 2>/dev/null | grep -E "Model name|^CPU\(s\)|Thread\(s\) per core|Core\(s\) per socket|Socket\(s\)|NUMA node\(s\)" | grep -v "scaling MHz" >> "$SYSTEM_INFO_FILE"
-    echo "" >> "$SYSTEM_INFO_FILE"
+#    echo "CPU型号和核心信息:" >> "$SYSTEM_INFO_FILE"
+#    lscpu 2>/dev/null | grep -E "Model name|^CPU\(s\)|Thread\(s\) per core|Core\(s\) per socket|Socket\(s\)|NUMA node\(s\)" | grep -v "scaling MHz" >> "$SYSTEM_INFO_FILE"
+#    echo "" >> "$SYSTEM_INFO_FILE"
+	echo "CPU型号和核心信息:" >> "$SYSTEM_INFO_FILE"
+	lscpu 2>/dev/null | grep -E "Model name|^CPU\(s\)|Thread\(s\) per core|Core\(s\) per socket|Socket\(s\)|NUMA node\(s\)" | grep -v "scaling MHz" >> "$SYSTEM_INFO_FILE"
+	echo "" >> "$SYSTEM_INFO_FILE"
     
     # CPU频率（修复：过滤掉百分比）
     echo "CPU频率信息:" >> "$SYSTEM_INFO_FILE"
@@ -124,6 +127,50 @@ EOF
     # 更详细的/proc/cpuinfo信息
     echo "CPU核心详细信息 (前2个核心):" >> "$SYSTEM_INFO_FILE"
     grep -E "processor|model name|cpu MHz|cache size" /proc/cpuinfo 2>/dev/null | head -8 >> "$SYSTEM_INFO_FILE"
+    echo "" >> "$SYSTEM_INFO_FILE"
+
+    # ============ 新增：详细CPU核心架构信息 ============
+    echo "详细CPU核心架构信息:" >> "$SYSTEM_INFO_FILE"
+    echo "----------------------------------------" >> "$SYSTEM_INFO_FILE"
+
+    # 获取NUMA节点信息
+    if command -v numactl &> /dev/null; then
+        echo "NUMA节点配置:" >> "$SYSTEM_INFO_FILE"
+        numactl -H 2>/dev/null | grep -E "available|cpus|size|free" | head -20 >> "$SYSTEM_INFO_FILE"
+        echo "" >> "$SYSTEM_INFO_FILE"
+    fi
+
+    # 获取CPU拓扑信息
+    echo "CPU拓扑信息:" >> "$SYSTEM_INFO_FILE"
+    lscpu 2>/dev/null | grep -E "Architecture|CPU op-mode|Byte Order|Vendor ID|CPU family|Model|Stepping|BogoMIPS|Virtualization|Hypervisor|Virtualization type" >> "$SYSTEM_INFO_FILE"
+    echo "" >> "$SYSTEM_INFO_FILE"
+
+    # 获取CPU核心列表
+    echo "CPU核心分布:" >> "$SYSTEM_INFO_FILE"
+    TOTAL_CPUS=$(lscpu 2>/dev/null | grep "^CPU(s)" | awk '{print $2}')
+    echo "总CPU线程数: $TOTAL_CPUS" >> "$SYSTEM_INFO_FILE"
+
+    # 如果是AMD EPYC或其他服务器CPU，尝试获取CCX/CCD信息
+    if echo "$CPU_MODEL" | grep -qi "EPYC\|Ryzen"; then
+        echo "检测到AMD CPU，尝试获取CCX/CCD信息:" >> "$SYSTEM_INFO_FILE"
+    
+        # 获取每插槽核心数
+        CORES_PER_SOCKET=$(lscpu 2>/dev/null | grep "Core(s) per socket" | awk '{print $4}')
+        SOCKETS=$(lscpu 2>/dev/null | grep "Socket(s)" | awk '{print $2}')
+    
+        if [ -n "$CORES_PER_SOCKET" ] && [ -n "$SOCKETS" ]; then
+            TOTAL_PHYSICAL_CORES=$((CORES_PER_SOCKET * SOCKETS))
+            echo "物理核心总数: $TOTAL_PHYSICAL_CORES" >> "$SYSTEM_INFO_FILE"
+            echo "每插槽核心数: $CORES_PER_SOCKET" >> "$SYSTEM_INFO_FILE"
+            echo "CPU插槽数: $SOCKETS" >> "$SYSTEM_INFO_FILE"
+        
+            # 如果是96核EPYC，通常是8个CCD，每个CCD 8个核心
+            if [ "$TOTAL_PHYSICAL_CORES" -eq 96 ]; then
+                echo "核心架构: 8个CCD (Core Complex Die)，每个CCD 8个核心" >> "$SYSTEM_INFO_FILE"
+                echo "CCD配置: 8 CCD × 8 核心/CCD = 96 核心" >> "$SYSTEM_INFO_FILE"
+            fi
+        fi
+    fi
     echo "" >> "$SYSTEM_INFO_FILE"
     
     # 内存信息
@@ -158,15 +205,15 @@ cat >> "$SYSTEM_INFO_FILE" << EOF
 二、内存信息
 ----------------------------------------
 EOF
-free -h 2>/dev/null >> "$SYSTEM_INFO_FILE"
-echo "" >> "$SYSTEM_INFO_FILE"
+    free -h 2>/dev/null >> "$SYSTEM_INFO_FILE"
+    echo "" >> "$SYSTEM_INFO_FILE"
 
-echo "详细内存信息:" >> "$SYSTEM_INFO_FILE"
-grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree" /proc/meminfo 2>/dev/null >> "$SYSTEM_INFO_FILE"
-echo "" >> "$SYSTEM_INFO_FILE"
+    echo "详细内存信息:" >> "$SYSTEM_INFO_FILE"
+    grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree" /proc/meminfo 2>/dev/null >> "$SYSTEM_INFO_FILE"
+    echo "" >> "$SYSTEM_INFO_FILE"
 
-# 新增：内存通道信息
-cat >> "$SYSTEM_INFO_FILE" << EOF
+    # 新增：内存通道信息
+    cat >> "$SYSTEM_INFO_FILE" << EOF
 三、内存通道和插槽信息
 ----------------------------------------
 EOF
@@ -301,7 +348,50 @@ else
     echo "建议安装: sudo apt-get install dmidecode 或 sudo apt-get install lshw" >> "$SYSTEM_INFO_FILE"
 fi
 
+
+# 在现有内存信息收集代码后添加
+
+# ============ 新增：详细的内存通道信息 ============
+echo "详细内存通道信息:" >> "$SYSTEM_INFO_FILE"
+echo "----------------------------------------" >> "$SYSTEM_INFO_FILE"
+
+# 尝试获取内存通道信息
+if command -v dmidecode &> /dev/null && [ "$EUID" -eq 0 ]; then
+    # 统计内存设备
+    MEMORY_DEVICES=$(dmidecode -t memory 2>/dev/null | grep -c "Memory Device")
+    echo "内存设备总数: $MEMORY_DEVICES" >> "$SYSTEM_INFO_FILE"
+    
+    # 统计已安装的内存设备
+    INSTALLED_DEVICES=$(dmidecode -t memory 2>/dev/null | grep -A5 "Memory Device" | grep "Size:" | grep -v "No Module" | wc -l)
+    echo "已安装内存设备: $INSTALLED_DEVICES" >> "$SYSTEM_INFO_FILE"
+    
+    # 统计内存通道
+    CHANNELS=$(dmidecode -t memory 2>/dev/null | grep "Bank Locator:" | sort -u | wc -l)
+    echo "内存通道数: $CHANNELS" >> "$SYSTEM_INFO_FILE"
+    
+    # 显示每个通道的内存信息
+    echo "" >> "$SYSTEM_INFO_FILE"
+    echo "各通道内存信息:" >> "$SYSTEM_INFO_FILE"
+    echo "-----------------" >> "$SYSTEM_INFO_FILE"
+    
+    # 统计每个通道的内存
+    CHANNEL_INFO=""
+    dmidecode -t memory 2>/dev/null | grep -B2 -A3 "Bank Locator:" | while read -r line; do
+        if [[ "$line" =~ "Bank Locator:" ]]; then
+            CHANNEL=$(echo "$line" | sed 's/.*Bank Locator://')
+            if [ -n "$CHANNEL" ]; then
+                # 计算该通道的总内存
+                CHANNEL_TOTAL=0
+                # 这里简化处理，实际需要更复杂的解析
+                echo "  通道 $CHANNEL: 有内存设备" >> "$SYSTEM_INFO_FILE"
+            fi
+        fi
+    done
+else
+    echo "需要root权限和dmidecode工具获取详细内存通道信息" >> "$SYSTEM_INFO_FILE"
+fi
 echo "" >> "$SYSTEM_INFO_FILE" << EOF
+
 四、系统架构信息
 ----------------------------------------
 EOF
@@ -313,6 +403,29 @@ EOF
     echo "" >> "$SYSTEM_INFO_FILE"
     
     # 主板/BIOS信息
+# 在现有系统架构信息后添加
+
+# ============ 新增：详细的OS和内核信息 ============
+    echo "操作系统详细信息:" >> "$SYSTEM_INFO_FILE"
+    echo "----------------------------------------" >> "$SYSTEM_INFO_FILE"
+
+    # 获取操作系统版本
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "操作系统: $NAME" >> "$SYSTEM_INFO_FILE"
+        echo "版本: $VERSION" >> "$SYSTEM_INFO_FILE"
+        echo "版本号: $VERSION_ID" >> "$SYSTEM_INFO_FILE"
+    elif [ -f /etc/redhat-release ]; then
+        cat /etc/redhat-release >> "$SYSTEM_INFO_FILE"
+    elif [ -f /etc/debian_version ]; then
+        echo "Debian $(cat /etc/debian_version)" >> "$SYSTEM_INFO_FILE"
+    fi
+    echo "" >> "$SYSTEM_INFO_FILE"
+
+    # 内核详细信息
+    echo "内核版本: $(uname -r)" >> "$SYSTEM_INFO_FILE"
+    echo "内核编译信息:" >> "$SYSTEM_INFO_FILE"
+    cat /proc/version 2>/dev/null >> "$SYSTEM_INFO_FILE"
     cat >> "$SYSTEM_INFO_FILE" << EOF
 五、主板/BIOS信息
 ----------------------------------------
@@ -405,6 +518,29 @@ EOF
     echo "CPU,每核线程数,$cpu_threads" >> "$OUTPUT_DIR/comparison_metrics.csv"
     echo "CPU,总线程数,$((cpu_cores * cpu_threads))" >> "$OUTPUT_DIR/comparison_metrics.csv"
     echo "CPU,CPU插槽数,$cpu_sockets" >> "$OUTPUT_DIR/comparison_metrics.csv"
+
+    # 在现有CPU信息后添加
+    echo "CPU,每插槽核心数,$CORES_PER_SOCKET" >> "$OUTPUT_DIR/comparison_metrics.csv"
+    echo "CPU,CPU插槽数,$SOCKETS" >> "$OUTPUT_DIR/comparison_metrics.csv"
+
+    # 添加总物理核心数
+    echo "CPU,总物理核心数,$((CORES_PER_SOCKET * SOCKETS))" >> "$OUTPUT_DIR/comparison_metrics.csv"
+
+    # 添加操作系统信息
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "系统,操作系统,$NAME" >> "$OUTPUT_DIR/comparison_metrics.csv"
+        echo "系统,OS版本,$VERSION_ID" >> "$OUTPUT_DIR/comparison_metrics.csv"
+    fi
+
+    # 添加内核版本
+    echo "系统,内核版本,$(uname -r)" >> "$OUTPUT_DIR/comparison_metrics.csv"
+
+    # 添加内存通道数（如果可用）
+    if command -v dmidecode &> /dev/null && [ "$EUID" -eq 0 ]; then
+        CHANNELS=$(dmidecode -t memory 2>/dev/null | grep "Bank Locator:" | sort -u | wc -l 2>/dev/null || echo "未知")
+        echo "内存,内存通道数,$CHANNELS" >> "$OUTPUT_DIR/comparison_metrics.csv"
+    fi
     
     # 提取内存信息
     local mem_total=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' | head -1)

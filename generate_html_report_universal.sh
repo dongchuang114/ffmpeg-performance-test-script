@@ -65,6 +65,38 @@ CPU_MODEL=$(grep "CPU型号" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 
 TOTAL_MEMORY=$(grep "总内存(GB)" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 FFMPEG_VERSION=$(grep "FFmpeg版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 
+# 在现有变量后添加以下代码
+
+# ============ 新增：读取更多系统信息 ============
+TOTAL_PHYSICAL_CORES=$(grep "总物理核心数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
+CORES_PER_SOCKET=$(grep "每插槽核心数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
+CPU_SOCKETS=$(grep "CPU插槽数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
+OS_NAME=$(grep "操作系统" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
+OS_VERSION=$(grep "OS版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
+KERNEL_VERSION=$(grep "内核版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
+MEMORY_CHANNELS=$(grep "内存通道数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
+
+# 格式化CPU信息
+if [ "$CPU_SOCKETS" != "未知" ] && [ "$CPU_SOCKETS" -gt 1 ]; then
+    CPU_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心 × ${CPU_SOCKETS}P)"
+else
+    CPU_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心)"
+fi
+
+# 格式化内存信息
+if [ "$MEMORY_CHANNELS" != "未知" ]; then
+    MEMORY_DISPLAY="${TOTAL_MEMORY}GB (${MEMORY_CHANNELS}通道)"
+else
+    MEMORY_DISPLAY="${TOTAL_MEMORY}GB"
+fi
+
+# 格式化OS信息
+if [ "$OS_VERSION" != "未知" ]; then
+    OS_DISPLAY="${OS_NAME} ${OS_VERSION}"
+else
+    OS_DISPLAY="${OS_NAME}"
+fi
+
 # 解析最佳和最差性能
 echo "分析性能数据..."
 
@@ -329,6 +361,50 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             color: #64748b;
             font-style: italic;
         }
+    /* 在现有CSS后添加以下样式 */
+    .system-card {
+        grid-column: span 2; /* 让系统配置卡片占两列宽度 */
+    }
+
+    .config-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin-top: 10px;
+    }
+
+    .config-item {
+        display: flex;
+        flex-direction: column;
+        padding: 8px;
+        background: #f8fafc;
+        border-radius: 6px;
+        border-left: 3px solid #4f46e5;
+    }
+
+    .config-label {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+
+    .config-value {
+        font-size: 0.9rem;
+        color: #1e293b;
+        font-weight: 500;
+    }
+
+    /* 响应式调整 */
+    @media (max-width: 768px) {
+        .system-card {
+            grid-column: span 1;
+        }
+        
+        .config-grid {
+            grid-template-columns: 1fr;
+        }
+    }
     </style>
 </head>
 <body>
@@ -341,12 +417,34 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         
         <div class="summary-cards">
             <div class="card">
-                <h3>系统配置</h3>
-                <div class="value">${CPU_CORES}</div>
-                <div class="label">CPU核心</div>
-                <div class="value">${CPU_MODEL}</div>
-                <div class="label">CPU型号</div>
-            </div>
+                <h3><i>⚙️</i> 系统配置详情</h3>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <div class="config-label">CPU架构</div>
+                        <div class="config-value">${CPU_DISPLAY}</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">CPU型号</div>
+                        <div class="config-value">${CPU_MODEL}</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">内存配置</div>
+                        <div class="config-value">${MEMORY_DISPLAY}</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">操作系统</div>
+                        <div class="config-value">${OS_DISPLAY}</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">内核版本</div>
+                        <div class="config-value">${KERNEL_VERSION}</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="config-label">FFmpeg版本</div>
+                        <div class="config-value">${FFMPEG_VERSION}</div>
+                    </div>
+                </div>
+                </div>
             
             <div class="card">
                 <h3>测试统计</h3>
