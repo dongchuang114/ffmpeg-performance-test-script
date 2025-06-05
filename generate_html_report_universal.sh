@@ -76,6 +76,34 @@ OS_VERSION=$(grep "OS版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 
 KERNEL_VERSION=$(grep "内核版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 MEMORY_CHANNELS=$(grep "内存通道数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 
+# 清理变量值，确保是数字
+CPU_CORES=$(echo "$CPU_CORES" | grep -oE '[0-9]+' || echo "0")
+CPU_SOCKETS=$(echo "$CPU_SOCKETS" | grep -oE '[0-9]+' || echo "1")
+TOTAL_PHYSICAL_CORES=$(echo "$TOTAL_PHYSICAL_CORES" | grep -oE '[0-9]+' || echo "0")
+CORES_PER_SOCKET=$(echo "$CORES_PER_SOCKET" | grep -oE '[0-9]+' || echo "1")
+MEMORY_CHANNELS=$(echo "$MEMORY_CHANNELS" | grep -oE '[0-9]+' || echo "0")
+OS_VERSION=$(echo "$OS_VERSION" | grep -oE '[0-9.]+' || echo "")
+
+# 如果总物理核心数为0，但CPU核心数有值，则尝试计算
+if [ "$TOTAL_PHYSICAL_CORES" = "0" ] && [ "$CPU_CORES" != "0" ]; then
+    if [ "$CPU_SOCKETS" != "0" ] && [ "$CORES_PER_SOCKET" != "0" ]; then
+        TOTAL_PHYSICAL_CORES=$((CPU_SOCKETS * CORES_PER_SOCKET))
+    else
+        # 如果没有每插槽核心数，假设为单线程
+        TOTAL_PHYSICAL_CORES="$CPU_CORES"
+    fi
+fi
+
+# 如果CPU插槽数为0，设为1
+if [ "$CPU_SOCKETS" = "0" ]; then
+    CPU_SOCKETS="1"
+fi
+
+# 如果每插槽核心数为0，计算一个合理值
+if [ "$CORES_PER_SOCKET" = "0" ] && [ "$TOTAL_PHYSICAL_CORES" != "0" ] && [ "$CPU_SOCKETS" != "0" ]; then
+    CORES_PER_SOCKET=$((TOTAL_PHYSICAL_CORES / CPU_SOCKETS))
+fi
+
 # 格式化CPU信息
 if [ "$CPU_SOCKETS" != "未知" ] && [ "$CPU_SOCKETS" -gt 1 ]; then
     CPU_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心 × ${CPU_SOCKETS}P)"
@@ -239,20 +267,32 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         .header {
             background: linear-gradient(90deg, #4f46e5, #7c3aed);
             color: white;
-            padding: 30px;
+            padding: 20px 30px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
         }
-        
+
         .header h1 {
-            font-size: 2.2rem;
-            margin-bottom: 10px;
+            font-size: 2rem;
+            margin-bottom: 8px;
+            font-weight: 700;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
+
+        .header p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            line-height: 1.4;
+            margin: 5px 0;
+        }        
         
         .summary-cards {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 20px;
-            padding: 20px;
+            padding: 25px;
+            background: #f8fafc;
         }
         
         .card {
@@ -340,7 +380,88 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         .speed-good { color: #3b82f6; font-weight: bold; }
         .speed-fair { color: #f59e0b; font-weight: bold; }
         .speed-poor { color: #ef4444; font-weight: bold; }
+       
+        /* 系统配置卡片特殊样式 */
+        .system-config {
+            grid-column: span 2;
+            border-left-color: #4f46e5;
+            background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+        }
+
+        .system-details {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .system-row {
+            display: flex;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .system-row:last-child {
+            border-bottom: none;
+        }
+
+        .system-label {
+            flex: 0 0 100px;
+            font-size: 0.85rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .system-value {
+            flex: 1;
+            font-size: 0.9rem;
+            color: #1e293b;
+            font-weight: 500;
+            word-break: break-word;
+        }
+
+        /* 其他卡片优化 */
+        .card.best {
+            border-left-color: #10b981;
+            background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+        }
+
+        .card.worst {
+            border-left-color: #ef4444;
+            background: linear-gradient(135deg, #fef2f2, #fee2e2);
+        }
+
+        .card .value {
+            font-size: 1.6rem;
+            font-weight: bold;
+            color: #1e293b;
+            margin: 8px 0 4px 0;
+        }
+
+        .card .label {
+            color: #64748b;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+    /* 响应式调整 */
+    @media (max-width: 768px) {
+        .system-config {
+            grid-column: span 1;
+        }
         
+        .system-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+        
+        .system-label {
+            flex: none;
+            width: 100%;
+        }
+    }
+ 
         .footer {
             text-align: center;
             padding: 20px;
@@ -361,39 +482,39 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             color: #64748b;
             font-style: italic;
         }
-    /* 在现有CSS后添加以下样式 */
-    .system-card {
-        grid-column: span 2; /* 让系统配置卡片占两列宽度 */
-    }
+        /* 在现有CSS后添加以下样式 */
+        .system-card {
+            grid-column: span 2; /* 让系统配置卡片占两列宽度 */
+        }
 
-    .config-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
-        margin-top: 10px;
-    }
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
 
-    .config-item {
-        display: flex;
-        flex-direction: column;
-        padding: 8px;
-        background: #f8fafc;
-        border-radius: 6px;
-        border-left: 3px solid #4f46e5;
-    }
+        .config-item {
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+            background: #f8fafc;
+            border-radius: 6px;
+            border-left: 3px solid #4f46e5;
+        }
 
-    .config-label {
-        font-size: 0.8rem;
-        color: #64748b;
-        margin-bottom: 4px;
-        font-weight: 600;
-    }
+        .config-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
 
-    .config-value {
-        font-size: 0.9rem;
-        color: #1e293b;
-        font-weight: 500;
-    }
+        .config-value {
+            font-size: 0.9rem;
+            color: #1e293b;
+            font-weight: 500;
+        }
 
     /* 响应式调整 */
     @media (max-width: 768px) {
@@ -445,26 +566,27 @@ cat > "$OUTPUT_FILE" << HTML_EOF
                     </div>
                 </div>
                 </div>
-            
+
             <div class="card">
-                <h3>测试统计</h3>
+                <h3><i>📊</i> 测试统计</h3>
                 <div class="value">${TEST_COUNT}</div>
                 <div class="label">测试数量</div>
                 <div class="value">${TOTAL_DURATION}s</div>
                 <div class="label">总测试时长</div>
             </div>
-            
+
             <div class="card best">
-                <h3>最佳性能</h3>
-                <div class="value">${BEST_SPEED}x</div>
-                <div class="label">${BEST_NAME}</div>
+                <h3><i>🏆</i> 最佳性能</h3>
+                <div class="value">${BEST_SPEED:-0.00}x</div>
+                <div class="label">${BEST_NAME:-无数据}</div>
+            </div>
+
+            <div class="card worst">
+                <h3><i>⚠️</i> 性能瓶颈</h3>
+                <div class="value">${WORST_SPEED:-0.00}x</div>
+                <div class="label">${WORST_NAME:-无数据}</div>
             </div>
             
-            <div class="card worst">
-                <h3>性能瓶颈</h3>
-                <div class="value">${WORST_SPEED}x</div>
-                <div class="label">${WORST_NAME}</div>
-            </div>
         </div>
         
         <div class="section">
