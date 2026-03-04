@@ -223,7 +223,22 @@ EOF
     
     # 提取CPU信息
     local cpu_model=$(lscpu 2>/dev/null | grep "Model name" | cut -d':' -f2- | sed 's/^[ \t]*//')
-    local cpu_cores=$(lscpu 2>/dev/null | grep "^CPU(s)" | cut -d':' -f2 | sed 's/^[ \t]*//' | cut -d' ' -f1)
+#    local cpu_cores=$(lscpu 2>/dev/null | grep "^CPU(s)" | cut -d':' -f2 | sed 's/^[ \t]*//' | cut -d' ' -f1)
+   
+	# 修复CPU核心数提取
+	local cpu_cores=$(lscpu 2>/dev/null | grep "^CPU(s)" | cut -d':' -f2 | sed 's/^[[:space:]]*//')
+
+	# 方法1：先提取纯数字部分
+	cpu_cores=$(echo "$cpu_cores" | grep -o '[0-9]*' | head -1)
+
+	# 方法2：如果仍然异常，使用安全值
+	if [ -z "$cpu_cores" ] || [ "$cpu_cores" -gt 2048 ] || [ "$cpu_cores" -lt 1 ]; then
+    	# 对于AMD EPYC 9755，实际是128核256线程
+    	# 但lscpu显示的"CPU(s): 256"是逻辑CPU数（线程数）
+    	# 这里我们取逻辑CPU数
+    	cpu_cores=256
+    	log_warning "CPU核心数提取异常，使用默认值: $cpu_cores"
+	fi 
     local cpu_threads=$(lscpu 2>/dev/null | grep "Thread(s) per core" | cut -d':' -f2 | sed 's/^[ \t]*//' | cut -d' ' -f1)
     local cpu_sockets=$(lscpu 2>/dev/null | grep "Socket(s)" | cut -d':' -f2 | sed 's/^[ \t]*//' | cut -d' ' -f1)
     
@@ -337,11 +352,42 @@ run_with_timeout() {
 }
 
 # 函数：提取速度信息
+#extract_speed() {
+#    local log_file="$1"
+#    local speed=$(grep -o "speed=[0-9]*\.[0-9]*x" "$log_file" 2>/dev/null | tail -1 | cut -d'=' -f2)
+#    [ -z "$speed" ] && speed="N/A"
+#    echo "$speed"
+#}
 extract_speed() {
-    local log_file="$1"
-    local speed=$(grep -o "speed=[0-9]*\.[0-9]*x" "$log_file" 2>/dev/null | tail -1 | cut -d'=' -f2)
-    [ -z "$speed" ] && speed="N/A"
-    echo "$speed"
+ local log_file="$1"
+ local speed="0"
+ 
+ if [ -f "$log_file" ]; then
+     # 格式1: "speed=25.4x" (标准格式)
+     speed=$(grep -o "speed=[0-9]*\.[0-9]*x" "$log_file" 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d 'x')
+     
+     # 格式2: "speed=25x" (整数格式)
+     if [ -z "$speed" ] || [ "$speed" = "0" ]; then
+         speed=$(grep -o "speed=[0-9]*x" "$log_file" 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d 'x')
+     fi
+     
+     # 格式3: 从"11.4xx"中提取（您的日志中显示这种格式）
+     if [ -z "$speed" ] || [ "$speed" = "0" ]; then
+         speed=$(grep -o "[0-9]*\.[0-9]*xx" "$log_file" 2>/dev/null | tail -1 | tr -d 'x')
+     fi
+     
+     # 格式4: 直接数字格式
+     if [ -z "$speed" ] || [ "$speed" = "0" ]; then
+         speed=$(grep -o "speed= *[0-9]*\.[0-9]*" "$log_file" 2>/dev/null | tail -1 | awk '{print $2}')
+     fi
+ fi
+ 
+ # 最后验证：确保是数字，不是"N/A"或其他文本
+ if ! [[ "$speed" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+     speed="0"
+ fi
+ 
+ echo "$speed"
 }
 
 # 函数：运行性能测试
@@ -384,11 +430,24 @@ run_test() {
                 iteration=$((iteration + 1))
                 total_time=$(echo "$total_time + $duration" | bc 2>/dev/null || echo "$total_time")
                 
-                if [ "$speed" != "N/A" ]; then
-                    total_speed=$(echo "$total_speed + $speed" | bc 2>/dev/null || echo "$total_speed")
-                    speed_count=$((speed_count + 1))
-                fi
-                
+#                if [ "$speed" != "N/A" ]; then
+#                    total_speed=$(echo "$total_speed + $speed" | bc 2>/dev/null || echo "$total_speed")
+#                    speed_count=$((speed_count + 1))
+#                fi
+				# 累加速度 - 修复版
+				if [ -n "$speed" ] && [ "$speed" != "N/A" ]; then
+    				# 清理速度值：移除所有"x"字符，只保留数字
+    				local clean_speed=$(echo "$speed" | tr -d 'x')
+    
+    				# 验证清理后的值是数字
+    				if [[ "$clean_speed" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [ "$clean_speed" != "0" ]; then
+        				total_speed=$(echo "$total_speed + $clean_speed" | bc 2>/dev/null || echo "$total_speed")
+        				speed_count=$((speed_count + 1))
+        				log "有效速度值: ${clean_speed}, 已累加"
+    				else
+        				log "无效速度值: '$speed' (清理后: '$clean_speed')，跳过"
+    				fi
+				fi               
                 log "迭代 $iteration: 时间=${duration}s, 速度=${speed}x"
             fi
         else
@@ -408,15 +467,25 @@ run_test() {
     
     # 计算平均值
     local avg_time=0
-    local avg_speed=0
+#    local avg_speed=0
     if [ $iteration -gt 0 ]; then
         avg_time=$(echo "scale=3; $total_time / $iteration" | bc 2>/dev/null || echo "0")
     fi
     
-    if [ $speed_count -gt 0 ]; then
-        avg_speed=$(echo "scale=2; $total_speed / $speed_count" | bc 2>/dev/null || echo "0")
-    fi
-    
+#    if [ $speed_count -gt 0 ]; then
+#        avg_speed=$(echo "scale=2; $total_speed / $speed_count" | bc 2>/dev/null || echo "0")
+#    fi
+	# 计算平均速度
+	local avg_speed="N/A"
+	if [ $speed_count -gt 0 ]; then
+    	avg_speed=$(echo "scale=2; $total_speed / $speed_count" | bc 2>/dev/null || echo "0")
+	fi
+
+	# 确保avg_speed是数字格式
+	if ! [[ "$avg_speed" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    	avg_speed="0"
+	fi
+   
     # 计算相对于实时的速度
     local realtime_speed=0
     if [ $(echo "$avg_time > 0" | bc 2>/dev/null) -eq 1 ]; then
