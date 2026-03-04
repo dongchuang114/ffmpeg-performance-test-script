@@ -1,127 +1,94 @@
 ffmpeg version 6.1.1-3ubuntu5
 
-根据您修复后的FFmpeg性能测试脚本，我为您编写了详细的README文档：
+FFmpeg性能基准测试脚本 v2.1
 
-FFmpeg性能基准测试脚本
+一个全面的FFmpeg性能测试工具，用于评估视频编码、解码、滤镜处理和多线程性能。本版本修复了速度提取、CPU核心数计算和PSNR提取问题，并增加了HTML可视化报告功能。
 
-一个全面的FFmpeg性能测试工具，用于评估视频编码、解码、滤镜处理和多线程性能。
+主要改进
 
-功能特点
+✅ 修复的问题
 
-• ✅ 全面的编码测试：支持H.264、H.265、VP9编码器
+1. 速度提取修复：修复了编码速度显示为"x"的问题，现在正确显示实际速度值（如11.45x）
+2. CPU核心数修复：修复了CPU核心数提取错误（从25653修复为正确的256）
+3. PSNR提取修复：修复了质量测试中PSNR始终显示0.00dB的问题
+4. 预计时间计算改进：改进了预计运行时间的计算逻辑
+5. 多线程测试显示优化：优化了多线程测试结果的显示
 
-• ✅ 多分辨率测试：支持854x480、1280x720、1920x1080等分辨率
+✅ 新增功能
 
-• ✅ 多比特率测试：支持2000k、5000k等不同比特率
+1. HTML可视化报告：生成交互式HTML报告，包含性能图表和数据分析
+2. 文本摘要报告：生成简洁的文本摘要，快速查看关键性能指标
+3. 性能等级自动标记：自动标记优秀(≥5x)、良好(≥2x)、一般(≥1x)、较差(<1x)性能等级
+4. 优化建议：基于测试结果提供实用优化建议
 
-• ✅ 解码性能测试：测试主流格式的解码性能
+使用说明
 
-• ✅ 滤镜性能测试：缩放、翻转、模糊等滤镜处理测试
+1. 保存和运行脚本
 
-• ✅ 多线程测试：1-64线程性能对比
+# 保存脚本
+nano ffmpeg-complete-benchmark.sh
+# 粘贴脚本内容，保存退出
 
-• ✅ 质量测试：PSNR、SSIM质量指标分析
-
-• ✅ 系统信息收集：自动收集CPU、内存、FFmpeg版本等信息
-
-• ✅ 详细报告生成：CSV、HTML、文本格式报告
-
-系统要求
-
-• 操作系统：Linux（Ubuntu/CentOS等）
-
-• FFmpeg版本：4.4或更高版本
-
-• 内存：至少2GB可用内存
-
-• 存储空间：至少1GB可用空间
-
-• 权限：需要执行权限和FFmpeg安装权限
-
-快速开始
-
-1. 安装依赖
-
-# Ubuntu/Debian
-sudo apt update
-sudo apt install ffmpeg bc curl -y
-
-# CentOS/RHEL
-sudo yum install epel-release
-sudo yum install ffmpeg bc curl -y
-
-
-2. 获取脚本
-
-# 克隆仓库
-git clone https://github.com/dongchuang114/ffmpeg-performance-test-script.git
-cd ffmpeg-performance-test-script
-
-# 或直接下载脚本
-wget https://raw.githubusercontent.com/dongchuang114/ffmpeg-performance-test-script/master/ffmpeg-complete-benchmark.sh
+# 设置执行权限
 chmod +x ffmpeg-complete-benchmark.sh
 
-
-3. 运行完整测试
-
-# 基本测试（使用默认参数）
+# 运行完整测试
 ./ffmpeg-complete-benchmark.sh
 
-# 指定输入视频文件
-./ffmpeg-complete-benchmark.sh /path/to/input_video.mp4
 
-# 指定输入视频和输出目录
-./ffmpeg-complete-benchmark.sh /path/to/input_video.mp4 ./test_results
+2. 配置参数
 
+在脚本开头可以调整以下参数：
+# 基础测试配置
+TEST_DURATION=10              # 每个测试时长（秒）
+RESOLUTIONS="854x480 1280x720 1920x1080"  # 测试分辨率列表
+BITRATES="2000k 5000k"        # 测试比特率列表
+TEST_ITERATIONS=2             # 测试迭代次数（推荐2-3次取平均）
+TIMEOUT_SECONDS=300           # 单个测试超时时间
 
-详细使用说明
-
-配置参数
-
-在运行前，您可以编辑脚本开头的配置参数：
-# 主要配置参数（脚本第20-40行）
-TEST_DURATION=10           # 每个测试的时长（秒）
-RESOLUTIONS="854x480 1280x720 1920x1080"  # 测试分辨率
-BITRATES="2000k 5000k"     # 测试比特率
-TEST_ITERATIONS=2          # 每个测试的迭代次数
-TIMEOUT_DURATION=300       # 单个测试超时时间（秒）
-ENABLE_QUALITY_TESTS=true  # 是否启用质量测试
-ENABLE_HARDWARE_TESTS=false # 是否启用硬件加速测试
+# 功能开关
+ENABLE_HARDWARE_TESTS=false   # 是否测试硬件加速
+ENABLE_QUALITY_TESTS=true     # 是否测试质量
+ENABLE_HTML_REPORT=true       # 是否生成HTML报告（新增）
+SKIP_AV1=true                 # 是否跳过AV1编码测试
 
 
-测试项目说明
+3. 命令行参数
 
-脚本会自动运行以下测试：
+脚本支持命令行参数，无需编辑脚本：
+# 查看帮助
+./ffmpeg-complete-benchmark.sh --help
 
-1. 编码性能测试：
-   • H.264编码（medium/slow预设）
+# 查看版本
+./ffmpeg-complete-benchmark.sh --version
 
-   • H.265编码（medium预设）
+# 使用自定义参数运行
+./ffmpeg-complete-benchmark.sh \
+  -d 30 \
+  -i 3 \
+  -r "1920x1080 3840x2160" \
+  -b "5000k 10000k" \
+  --enable-hardware \
+  input.mp4 ./results
 
-   • VP9编码（good质量预设）
 
-2. 解码性能测试：
-   • H.264解码
+4. 对比测试
 
-   • H.265解码
+在不同系统上运行后，对比以下文件：
+# 1. 系统配置对比
+cat comparison_metrics.csv
 
-   • VP9解码
+# 2. 性能数据对比
+cat benchmark_results.csv
 
-3. 滤镜性能测试：
-   • 缩放滤镜（720p、1080p）
+# 3. 查看HTML报告
+# 在服务器上启动HTTP服务器查看
+python3 -m http.server 8000
+# 浏览器访问: http://localhost:8000/performance_report.html
 
-   • 水平翻转
 
-   • 垂直翻转
+预期输出文件
 
-   • 盒式模糊
-
-4. 多线程测试：
-   • 测试1、2、4、8、16、32、64线程性能
-
-输出文件
-
-测试完成后，会在输出目录生成以下文件：
 
 输出目录/
 ├── benchmark_results.csv      # 主要性能数据
@@ -129,17 +96,94 @@ ENABLE_HARDWARE_TESTS=false # 是否启用硬件加速测试
 ├── system_info.txt           # 详细系统信息
 ├── execution_summary.txt     # 执行摘要
 ├── benchmark_*.log           # 完整日志文件
+├── performance_report.html   # HTML可视化报告（新增）
+├── summary_report.txt        # 文本摘要报告（新增）
 ├── logs/                     # 详细测试日志
 │   ├── encode_*.log
 │   ├── decode_*.log
 │   └── filter_*.log
-└── videos/                   # 质量测试视频（如果启用）
+└── videos/                   # 质量测试视频
     └── quality_*.mp4
 
 
-结果解读
+HTML报告功能
 
-性能指标说明
+报告包含内容
+
+1. 性能摘要卡片：系统配置、测试统计、最佳性能、性能瓶颈
+2. 详细数据表格：所有测试结果的表格展示，带性能等级标记
+3. 编码器性能排名：不同编码器、预设、分辨率的性能对比
+4. 多线程性能分析：1-64线程的性能扩展曲线
+5. 优化建议：基于测试结果的实用建议
+
+查看报告的方法
+
+方法1：SSH隧道（推荐，安全）
+
+# 在服务器上启动HTTP服务器
+cd ./ffmpeg_benchmark_20260304_120212
+python3 -m http.server 8000 --bind 0.0.0.0
+
+# 在Windows笔记本上建立SSH隧道
+# 打开CMD或PowerShell，运行：
+ssh -N -L 18000:localhost:8000 username@server_ip
+
+# 在浏览器中访问
+# http://localhost:18000/performance_report.html
+
+
+方法2：PuTTY隧道
+
+1. 在PuTTY中配置SSH隧道：Connection -> SSH -> Tunnels
+2. 添加端口转发：Source: 18000, Destination: localhost:8000
+3. 连接服务器，启动HTTP服务器
+4. 在浏览器中访问：http://localhost:18000/performance_report.html
+
+测试项目说明
+
+脚本会自动运行以下测试：
+
+1. 编码性能测试
+
+• H.264编码：medium/slow预设
+
+• H.265编码：medium预设
+
+• VP9编码：good质量预设
+
+• 测试分辨率：854x480, 1280x720, 1920x1080
+
+• 测试比特率：2000k, 5000k
+
+2. 解码性能测试
+
+• H.264解码
+
+• H.265解码
+
+• VP9解码
+
+3. 滤镜处理测试
+
+• 缩放滤镜（720p, 1080p）
+
+• 水平翻转
+
+• 垂直翻转
+
+• 盒式模糊
+
+4. 多线程测试
+
+• 测试1, 2, 4, 8, 16, 32, 64线程性能
+
+5. 质量测试（可选）
+
+• SSIM/PSNR质量指标
+
+• 不同编码器和比特率的压缩效率对比
+
+性能指标解读
 
 指标 说明 理想值
 
@@ -151,169 +195,94 @@ ENABLE_HARDWARE_TESTS=false # 是否启用硬件加速测试
 
 测试耗时(秒) 包括准备和清理的总时间 -
 性能等级评估
-实时倍数 性能等级 说明
+实时倍数 性能等级 颜色标记 说明
 
-5x 🟢 优秀 性能卓越
+≥5x 🟢 优秀 绿色 性能卓越
 
-2-5x 🟡 良好 性能良好
+2-5x 🟡 良好 蓝色 性能良好
 
-1-2x 🟠 一般 基本满足需求
+1-2x 🟠 一般 橙色 基本满足需求
 
-<1x 🔴 较差 低于实时速度
+<1x 🔴 较差 红色 低于实时速度
 
-示例结果分析
+跨系统对比要点
 
-测试名称,平均时间(秒),编码速度(x),实时倍数(x),测试耗时(秒)
-encode_libx264_medium_854x480_2000k,1.007,11.45x,9.93x,2.214894028
+保持测试环境一致：
 
+• 相同的FFmpeg版本
 
-• 实时倍数9.93x：编码速度是实时播放的9.93倍
+• 相同的测试参数
 
-• 编码速度11.45x：FFmpeg内部报告的编码速度
+• 相似的系统负载
 
-• 平均时间1.007秒：处理10秒视频实际用时1.007秒
+记录环境差异：
 
-高级用法
+• CPU频率状态（性能模式/节能模式）
 
-自定义测试配置
+• 内存频率和时序
 
-# 只测试H.264编码
-RESOLUTIONS="1920x1080" BITRATES="5000k" ./ffmpeg-complete-benchmark.sh
+• 散热条件
 
-# 延长测试时间以获得更准确结果
-TEST_DURATION=30 TEST_ITERATIONS=3 ./ffmpeg-complete-benchmark.sh
+多次测试取平均：
 
-# 测试4K分辨率
-RESOLUTIONS="3840x2160" ./ffmpeg-complete-benchmark.sh
+• 建议每个系统运行3次
 
-# 禁用质量测试以加快速度
-ENABLE_QUALITY_TESTS=false ./ffmpeg-complete-benchmark.sh
+• 取平均值进行比较
 
-
-跨系统性能对比
-
-1. 在不同系统上运行相同测试：
-   # 系统A
-   ./ffmpeg-complete-benchmark.sh input.mp4 ./results_system_a
-   
-   # 系统B
-   ./ffmpeg-complete-benchmark.sh input.mp4 ./results_system_b
-   
-
-2. 对比结果：
-   # 对比主要性能指标
-   diff ./results_system_a/benchmark_results.csv ./results_system_b/benchmark_results.csv
-   
-   # 查看系统配置差异
-   diff ./results_system_a/comparison_metrics.csv ./results_system_b/comparison_metrics.csv
-   
-
-批量测试脚本
-
-创建批量测试脚本batch_test.sh：
-#!/bin/bash
-# 批量测试不同配置
-
-CONFIGS=(
-    "TEST_DURATION=10 RESOLUTIONS='854x480' BITRATES='2000k'"
-    "TEST_DURATION=10 RESOLUTIONS='1280x720' BITRATES='5000k'"
-    "TEST_DURATION=30 RESOLUTIONS='1920x1080' BITRATES='2000k 5000k'"
-)
-
-for i in "${!CONFIGS[@]}"; do
-    echo "运行测试配置 $((i+1)): ${CONFIGS[$i]}"
-    OUTPUT_DIR="./batch_test_$((i+1))"
-    eval "${CONFIGS[$i]}" ./ffmpeg-complete-benchmark.sh input.mp4 "$OUTPUT_DIR"
-done
-
+• 注意环境温度的差异
 
 故障排除
 
 常见问题
 
-1. FFmpeg未安装：
-   # 检查FFmpeg版本
-   ffmpeg -version
-   
-   # 如果未安装，使用包管理器安装
-   sudo apt install ffmpeg  # Ubuntu/Debian
-   sudo yum install ffmpeg  # CentOS/RHEL
-   
+1. HTML报告无法加载数据
+   • 原因：浏览器安全限制，禁止加载本地文件
 
-2. 权限不足：
-   # 添加执行权限
-   chmod +x ffmpeg-complete-benchmark.sh
-   
-   # 确保有写入权限
-   chmod 755 .
-   
+   • 解决：使用HTTP服务器查看，不要直接双击HTML文件
 
-3. 输入视频文件不存在：
-   # 使用示例视频
-   wget http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4
-   ./ffmpeg-complete-benchmark.sh BigBuckBunny.mp4
-   
+2. 速度值显示为"x"
+   • 原因：FFmpeg输出格式变化
 
-4. 内存不足：
-   # 减少测试分辨率
-   RESOLUTIONS="854x480" ./ffmpeg-complete-benchmark.sh
-   
-   # 减少测试时长
-   TEST_DURATION=5 ./ffmpeg-complete-benchmark.sh
-   
+   • 解决：已修复，确保使用最新版本脚本
 
-调试模式
+3. CPU核心数显示错误
+   • 原因：lscpu输出解析问题
 
-# 启用详细日志
-DEBUG=true ./ffmpeg-complete-benchmark.sh
+   • 解决：已修复，使用正确的提取逻辑
 
-# 查看实时进度
-tail -f ./test_results/benchmark_*.log
+4. PSNR始终显示0.00dB
+   • 原因：PSNR提取逻辑错误
 
+   • 解决：已修复，正确解析FFmpeg输出
 
-性能优化建议
+依赖检查
 
-基于测试结果的优化
+脚本需要以下工具：
+• FFmpeg 4.4+：视频处理工具
 
-1. 编码器选择：
-   • 实时编码：选择H.264 medium预设（性能最佳）
+• bc：数学计算工具
 
-   • 高质量编码：选择H.265 slow预设（压缩率最高）
+• python3：HTML报告查看（可选）
 
-   • Web使用：选择VP9（专利免费）
+安装依赖：
+# Ubuntu/Debian
+sudo apt install ffmpeg bc python3
 
-2. 线程数优化：
-   • 根据测试结果选择最佳线程数（通常是8-16线程）
-
-   • 设置FFmpeg线程数：-threads 12
-
-3. 分辨率选择：
-   • 1080p：平衡质量和性能
-
-   • 720p：适合流媒体和移动设备
-
-   • 480p：最低带宽消耗
-
-系统级优化
-
-# 设置CPU性能模式
-sudo cpupower frequency-set -g performance
-
-# 提高进程优先级
-nice -n -10 ./ffmpeg-complete-benchmark.sh
-
-# 使用内存磁盘加速
-mkdir /tmp/ffmpeg_test
-TMPDIR=/tmp/ffmpeg_test ./ffmpeg-complete-benchmark.sh
+# CentOS/RHEL
+sudo yum install ffmpeg bc python3
 
 
 更新日志
 
-版本 1.1（当前版本）
+版本 2.1 (2026-03-04)
 
-• ✅ 修复速度提取函数，正确显示编码速度值
+• ✅ 新增HTML可视化报告功能
 
-• ✅ 修复CPU核心数提取错误（25653 → 256）
+• ✅ 新增文本摘要报告
+
+• ✅ 修复速度提取函数，正确显示编码速度
+
+• ✅ 修复CPU核心数提取，正确显示256核
 
 • ✅ 修复PSNR提取问题，正确显示质量指标
 
@@ -321,7 +290,11 @@ TMPDIR=/tmp/ffmpeg_test ./ffmpeg-complete-benchmark.sh
 
 • ✅ 优化多线程测试结果显示
 
-版本 1.0（初始版本）
+• ✅ 增加性能等级自动标记
+
+• ✅ 提供基于测试结果的优化建议
+
+版本 1.0 (初始版本)
 
 • ✅ 基础编码/解码性能测试
 
@@ -329,15 +302,7 @@ TMPDIR=/tmp/ffmpeg_test ./ffmpeg-complete-benchmark.sh
 
 • ✅ 系统信息收集
 
-• ✅ 详细报告生成
-
-贡献指南
-
-1. Fork本仓库
-2. 创建功能分支：git checkout -b feature/your-feature
-3. 提交更改：git commit -m 'Add some feature'
-4. 推送到分支：git push origin feature/your-feature
-5. 提交Pull Request
+• ✅ CSV格式报告生成
 
 许可证
 
@@ -350,6 +315,8 @@ TMPDIR=/tmp/ffmpeg_test ./ffmpeg-complete-benchmark.sh
 • 功能请求：通过Issues提交
 
 • 贡献代码：欢迎Pull Requests
+
+提示：运行完整测试可能需要30-60分钟，具体取决于系统性能。建议在系统空闲时运行以获得准确结果。HTML报告功能需要浏览器支持，建议使用Chrome、Firefox或Edge最新版本。
 
 相关资源
 
