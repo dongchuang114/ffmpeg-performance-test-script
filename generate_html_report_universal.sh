@@ -89,35 +89,45 @@ CORES_PER_SOCKET=$(echo "$CORES_PER_SOCKET" | grep -oE '[0-9]+' || echo "1")
 MEMORY_CHANNELS=$(echo "$MEMORY_CHANNELS" | grep -oE '[0-9]+' || echo "0")
 OS_VERSION=$(echo "$OS_VERSION" | grep -oE '[0-9.]+' || echo "")
 
-# 如果总物理核心数为0，但CPU核心数有值，则尝试计算
-if [ "$TOTAL_PHYSICAL_CORES" = "0" ] && [ "$CPU_CORES" != "0" ]; then
+# 清理内核版本，去掉重复的部分
+KERNEL_VERSION=$(echo "$KERNEL_VERSION" | sed 's/\([0-9]\+\(\.[0-9]\+\)*[-a-z0-9]*\) \1/\1/')
+
+# 检查内核版本是否仍然很长，如果是，截取第一个单词
+KERNEL_VERSION=$(echo "$KERNEL_VERSION" | awk '{print $1}')
+
+# 清理操作系统名称
+OS_NAME=$(echo "$OS_NAME" | sed 's/^"//' | sed 's/"$//')
+OS_NAME=$(echo "$OS_NAME" | sed "s/^'//" | sed "s/'$//")
+
+# 清理CPU型号
+CPU_MODEL=$(echo "$CPU_MODEL" | sed "s/^'//" | sed "s/'$//")
+
+
+# 计算物理核心数
+if [ "$TOTAL_PHYSICAL_CORES" = "0" ]; then
     if [ "$CPU_SOCKETS" != "0" ] && [ "$CORES_PER_SOCKET" != "0" ]; then
         TOTAL_PHYSICAL_CORES=$((CPU_SOCKETS * CORES_PER_SOCKET))
+    elif [ "$CPU_CORES" = "384" ]; then
+        # 对于AMD EPYC 9T24，通常是96物理核心，4线程/核心
+        TOTAL_PHYSICAL_CORES="96"
+        CPU_SOCKETS="2"
+        CORES_PER_SOCKET="48"
+    elif [ "$CPU_CORES" = "256" ]; then
+        # 对于其他服务器CPU
+        TOTAL_PHYSICAL_CORES=$((CPU_CORES / 2))  # 假设2线程/核心
     else
-        # 如果没有每插槽核心数，假设为单线程
         TOTAL_PHYSICAL_CORES="$CPU_CORES"
     fi
 fi
 
-# 如果CPU插槽数为0，设为1
-if [ "$CPU_SOCKETS" = "0" ]; then
-    CPU_SOCKETS="1"
-fi
-
-# 如果每插槽核心数为0，计算一个合理值
-if [ "$CORES_PER_SOCKET" = "0" ] && [ "$TOTAL_PHYSICAL_CORES" != "0" ] && [ "$CPU_SOCKETS" != "0" ]; then
-    CORES_PER_SOCKET=$((TOTAL_PHYSICAL_CORES / CPU_SOCKETS))
-fi
-
-# 格式化CPU信息
-if [ "$CPU_SOCKETS" != "未知" ] && [ "$CPU_SOCKETS" -gt 1 ]; then
-    CPU_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心 × ${CPU_SOCKETS}P)"
+# 格式化显示
+if [ "$CPU_SOCKETS" != "0" ] && [ "$CPU_SOCKETS" != "1" ]; then
+    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心 × ${CPU_SOCKETS}P)"
 else
-    CPU_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心)"
+    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心)"
 fi
 
-# 格式化内存信息
-if [ "$MEMORY_CHANNELS" != "未知" ]; then
+if [ "$MEMORY_CHANNELS" != "0" ]; then
     MEMORY_DISPLAY="${TOTAL_MEMORY}GB (${MEMORY_CHANNELS}通道)"
 else
     MEMORY_DISPLAY="${TOTAL_MEMORY}GB"
@@ -531,6 +541,133 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             grid-template-columns: 1fr;
         }
     }
+
+  /* 系统配置卡片样式 */
+  .system-card {
+      grid-column: span 2; /* 占两列宽度 */
+      border-left-color: #4f46e5;
+      background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  }
+
+  .hardware-section, .software-section {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+  }
+
+  .hardware-section h4, .software-section h4 {
+      color: #475569;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+  }
+
+  .hardware-section h4 i, .software-section h4 i {
+      color: #4f46e5;
+      font-size: 1rem;
+  }
+
+  .info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+  }
+
+  .info-item {
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      background: white;
+      border-radius: 6px;
+      border-left: 3px solid #4f46e5;
+      min-height: 60px;
+  }
+
+  .info-label {
+      font-size: 0.8rem;
+      color: #64748b;
+      font-weight: 500;
+      margin-bottom: 4px;
+  }
+
+  .info-value {
+      font-size: 0.9rem;
+      color: #1e293b;
+      font-weight: 500;
+      line-height: 1.4;
+      word-break: break-word;
+  }
+
+  /* 其他卡片优化 */
+  .card {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 120px;
+  }
+
+  .card h3 {
+      color: #4f46e5;
+      margin-bottom: 15px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+  }
+
+  .card h3 i {
+      font-size: 1.1rem;
+  }
+
+  .card .value {
+      font-size: 1.6rem;
+      font-weight: bold;
+      color: #1e293b;
+      margin-bottom: 5px;
+  }
+
+  .card .label {
+      color: #64748b;
+      font-size: 0.85rem;
+      line-height: 1.4;
+  }
+
+  .card.best {
+      border-left-color: #10b981;
+      background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  }
+
+  .card.worst {
+      border-left-color: #ef4444;
+      background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  }
+
+  .card.best .value {
+      color: #10b981;
+  }
+
+  .card.worst .value {
+      color: #ef4444;
+  }
+
+  /* 响应式调整 */
+  @media (max-width: 1024px) {
+      .system-card {
+          grid-column: span 1;
+      }
+      
+      .info-grid {
+          grid-template-columns: 1fr;
+      }
+  }
+
+
     </style>
 </head>
 <body>
@@ -540,58 +677,68 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             <p>生成时间: $(date '+%Y年%m月%d日 %H:%M:%S')</p>
             <p>测试目录: $(basename "$(pwd)")</p>
         </div>
-        
-        <div class="summary-cards">
-            <h3><i>⚙️</i> 系统配置详情</h3>
-            
-            <div class="hardware-info">
-                <div class="info-row">
-                    <div class="info-label">CPU架构</div>
-                    <div class="info-value">'$CPU_ARCH_DISPLAY'</div>
+
+    <div class="summary-cards">
+            <div class="card system-card">
+                <h3><i>⚙️</i> 系统配置详情</h3>
+
+                <div class="hardware-section">
+                    <h4><i>💻</i> 硬件信息</h4>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">CPU架构</span>
+                            <span class="info-value">'$CPU_ARCH_DISPLAY'</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">CPU型号</span>
+                            <span class="info-value">'$CPU_MODEL'</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">内存配置</span>
+                            <span class="info-value">'$MEMORY_DISPLAY'</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="info-row">
-                    <div class="info-label">CPU型号</div>
-                    <div class="info-value">'$CPU_MODEL'</div>
-                </div>
-                <div class="info-row">
-                    <div class="info-label">内存配置</div>
-                    <div class="info-value">'$MEMORY_DISPLAY'</div>
+
+                <div class="software-section">
+                    <h4><i>🖥️</i> 软件信息</h4>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">操作系统</span>
+                            <span class="info-value">'$OS_NAME' '$OS_VERSION'</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">内核版本</span>
+                            <span class="info-value">'$KERNEL_VERSION'</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">FFmpeg版本</span>
+                            <span class="info-value">'$FFMPEG_VERSION'</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <div class="software-info">
-                <div class="info-row">
-                    <div class="info-label">操作系统</div>
-                    <div class="info-value">'$OS_NAME' '$OS_VERSION'</div>
-                </div>
-                <div class="info-row">
-                    <div class="info-label">内核版本</div>
-                    <div class="info-value">'$KERNEL_VERSION'</div>
-                </div>
-                <div class="info-row">
-                    <div class="info-label">FFmpeg版本</div>
-                    <div class="info-value">'$FFMPEG_VERSION'</div>
-                </div>
-            </div>
+
             <div class="card">
                 <h3><i>📊</i> 测试统计</h3>
-                <div class="value">${TEST_COUNT}</div>
+                <div class="value">'$TEST_COUNT'</div>
                 <div class="label">测试数量</div>
-                <div class="value">${TOTAL_DURATION}s</div>
+                <div class="value">'$TOTAL_DURATION's</div>
                 <div class="label">总测试时长</div>
             </div>
 
             <div class="card best">
                 <h3><i>🏆</i> 最佳性能</h3>
-                <div class="value">${BEST_SPEED:-0.00}x</div>
-                <div class="label">${BEST_NAME:-无数据}</div>
+                <div class="value">'$BEST_SPEED'x</div>
+                <div class="label">'$BEST_NAME'</div>
             </div>
 
             <div class="card worst">
                 <h3><i>⚠️</i> 性能瓶颈</h3>
-                <div class="value">${WORST_SPEED:-0.00}x</div>
-                <div class="label">${WORST_NAME:-无数据}</div>
+                <div class="value">'$WORST_SPEED'x</div>
+                <div class="label">'$WORST_NAME'</div>
             </div>
+        </div>
             
         </div>
         
