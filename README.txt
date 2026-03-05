@@ -71,6 +71,8 @@ SKIP_AV1=true                 # 是否跳过AV1编码测试
   --enable-hardware \
   input.mp4 ./results
 
+# 可自定义长度视频做为输入视频源
+ffmpeg -f lavfi -i "testsrc=duration=610:size=1920x1080:rate=30" -c:v libx264 -preset ultrafast test_10min.mp4
 
 4. 对比测试
 
