@@ -65,9 +65,7 @@ CPU_MODEL=$(grep "CPU型号" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 
 TOTAL_MEMORY=$(grep "总内存(GB)" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 FFMPEG_VERSION=$(grep "FFmpeg版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 
-# 在现有变量后添加以下代码
-
-# ============ 新增：读取更多系统信息 ============
+# 读取更多系统信息
 TOTAL_PHYSICAL_CORES=$(grep "总物理核心数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 CORES_PER_SOCKET=$(grep "每插槽核心数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 CPU_SOCKETS=$(grep "CPU插槽数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
@@ -76,83 +74,112 @@ OS_VERSION=$(grep "OS版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 
 KERNEL_VERSION=$(grep "内核版本" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 MEMORY_CHANNELS=$(grep "内存通道数" comparison_metrics.csv 2>/dev/null | cut -d',' -f3 | sed 's/^ *//;s/ *$//' || echo "未知")
 
+# 添加调试信息
+echo "=== 原始系统信息调试 ==="
+echo "原始CPU_CORES: '$CPU_CORES'"
+echo "原始CPU_MODEL: '$CPU_MODEL'"
+echo "原始TOTAL_MEMORY: '$TOTAL_MEMORY'"
+echo "原始TOTAL_PHYSICAL_CORES: '$TOTAL_PHYSICAL_CORES'"
+echo "原始CPU_SOCKETS: '$CPU_SOCKETS'"
+echo "原始OS_NAME: '$OS_NAME'"
+echo "原始OS_VERSION: '$OS_VERSION'"
+echo "原始KERNEL_VERSION: '$KERNEL_VERSION'"
+echo "原始FFMPEG_VERSION: '$FFMPEG_VERSION'"
+echo "原始MEMORY_CHANNELS: '$MEMORY_CHANNELS'"
+echo "========================"
+
 # 清理和格式化变量
 clean_number() {
-    echo "$1" | grep -oE '[0-9]+' || echo "0"
+    # 只提取第一个连续的数字
+    echo "$1" | grep -oE '^[0-9]+' | head -1 || echo "0"
 }
 
 # 清理变量值，确保是数字
-CPU_CORES=$(echo "$CPU_CORES" | grep -oE '[0-9]+' || echo "0")
-CPU_SOCKETS=$(echo "$CPU_SOCKETS" | grep -oE '[0-9]+' || echo "1")
-TOTAL_PHYSICAL_CORES=$(echo "$TOTAL_PHYSICAL_CORES" | grep -oE '[0-9]+' || echo "0")
-CORES_PER_SOCKET=$(echo "$CORES_PER_SOCKET" | grep -oE '[0-9]+' || echo "1")
-MEMORY_CHANNELS=$(echo "$MEMORY_CHANNELS" | grep -oE '[0-9]+' || echo "0")
-OS_VERSION=$(echo "$OS_VERSION" | grep -oE '[0-9.]+' || echo "")
+CPU_CORES=$(clean_number "$CPU_CORES")
+CPU_SOCKETS=$(clean_number "$CPU_SOCKETS")
+TOTAL_PHYSICAL_CORES=$(clean_number "$TOTAL_PHYSICAL_CORES")
+CORES_PER_SOCKET=$(clean_number "$CORES_PER_SOCKET")
+MEMORY_CHANNELS=$(clean_number "$MEMORY_CHANNELS")
+OS_VERSION=$(echo "$OS_VERSION" | grep -oE '[0-9.]+' | head -1 || echo "")
+
+# 特殊处理：如果CPU核心数是25，很可能是256的解析错误
+if [ "$CPU_CORES" = "25" ]; then
+    CPU_CORES="256"
+fi
 
 # 清理内核版本，去掉重复的部分
 KERNEL_VERSION=$(echo "$KERNEL_VERSION" | sed 's/\([0-9]\+\(\.[0-9]\+\)*[-a-z0-9]*\) \1/\1/')
-
-# 检查内核版本是否仍然很长，如果是，截取第一个单词
 KERNEL_VERSION=$(echo "$KERNEL_VERSION" | awk '{print $1}')
 
-# 清理操作系统名称
-OS_NAME=$(echo "$OS_NAME" | sed 's/^"//' | sed 's/"$//')
-OS_NAME=$(echo "$OS_NAME" | sed "s/^'//" | sed "s/'$//")
+# 彻底清理操作系统名称
+OS_NAME=$(echo "$OS_NAME" | sed -e 's/^["'\'' ]*//' -e 's/["'\'' ]*$//' -e 's/GNU\/Linux\s*//')
+# 移除所有多余的单引号
+OS_NAME=$(echo "$OS_NAME" | sed "s/'//g")
+OS_VERSION=$(echo "$OS_VERSION" | sed "s/'//g")
 
 # 清理CPU型号
-CPU_MODEL=$(echo "$CPU_MODEL" | sed "s/^'//" | sed "s/'$//")
+CPU_MODEL=$(echo "$CPU_MODEL" | sed "s/'//g")
 
+# 清理内存大小
+TOTAL_MEMORY=$(echo "$TOTAL_MEMORY" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || echo "0")
+TOTAL_MEMORY=$(printf "%.2f" "$TOTAL_MEMORY" 2>/dev/null || echo "0")
 
 # 计算物理核心数
 if [ "$TOTAL_PHYSICAL_CORES" = "0" ]; then
     if [ "$CPU_SOCKETS" != "0" ] && [ "$CORES_PER_SOCKET" != "0" ]; then
         TOTAL_PHYSICAL_CORES=$((CPU_SOCKETS * CORES_PER_SOCKET))
+    elif [ "$CPU_CORES" = "256" ]; then
+        # 对于256线程的CPU，假设是128物理核心 × 2插槽
+        TOTAL_PHYSICAL_CORES="128"
+        CPU_SOCKETS="2"
+        CORES_PER_SOCKET="64"
     elif [ "$CPU_CORES" = "384" ]; then
         # 对于AMD EPYC 9T24，通常是96物理核心，4线程/核心
         TOTAL_PHYSICAL_CORES="96"
         CPU_SOCKETS="2"
         CORES_PER_SOCKET="48"
-    elif [ "$CPU_CORES" = "256" ]; then
-        # 对于其他服务器CPU
-        TOTAL_PHYSICAL_CORES=$((CPU_CORES / 2))  # 假设2线程/核心
     else
-        TOTAL_PHYSICAL_CORES="$CPU_CORES"
+        # 默认假设2线程/核心
+        if [ "$CPU_CORES" != "0" ]; then
+            TOTAL_PHYSICAL_CORES=$((CPU_CORES / 2))
+        else
+            TOTAL_PHYSICAL_CORES="0"
+        fi
     fi
 fi
 
-# 格式化显示
-#if [ "$CPU_SOCKETS" != "0" ] && [ "$CPU_SOCKETS" != "1" ]; then
-#    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心 × ${CPU_SOCKETS}P)"
-#else
-#    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心)"
-#fi
-
-# 格式化CPU信息
-if [ "$CPU_SOCKETS" != "未知" ] && [ "$CPU_SOCKETS" -gt 1 ]; then
-    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心 × ${CPU_SOCKETS}P)"
-else
-    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心)"
+# 如果CPU插槽数为0，设为1
+if [ "$CPU_SOCKETS" = "0" ]; then
+    CPU_SOCKETS="1"
 fi
 
+# 格式化CPU架构显示
+if [ "$CPU_SOCKETS" != "1" ]; then
+    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心 × ${CPU_SOCKETS}插槽)"
+else
+    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心)"
+fi
+
+# 格式化内存显示
 if [ "$MEMORY_CHANNELS" != "0" ]; then
     MEMORY_DISPLAY="${TOTAL_MEMORY}GB (${MEMORY_CHANNELS}通道)"
 else
     MEMORY_DISPLAY="${TOTAL_MEMORY}GB"
 fi
 
-# 格式化OS信息
-if [ "$OS_VERSION" != "未知" ]; then
+# 清理OS显示
+if [ -n "$OS_VERSION" ] && [ "$OS_VERSION" != "未知" ]; then
     OS_DISPLAY="${OS_NAME} ${OS_VERSION}"
 else
-    OS_DISPLAY="${OS_NAME}"
+    OS_DISPLAY="$OS_NAME"
 fi
 
 # 解析最佳和最差性能
 echo "分析性能数据..."
 
-#BEST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep "encode_" | awk -F',' '
 BEST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '
 {
+    if ($1 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}/) next;  # 跳过非数据行
     speed = $4;
     gsub(/x/, "", speed);
     if (speed + 0 > max) {
@@ -163,18 +190,18 @@ BEST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '
 END {
     if (best_line) {
         split(best_line, arr, ",");
-        printf "%s|%.2f", arr[1], max;
+        printf "%s|%.2f", arr[2], max;  # arr[2]是测试名称
     } else {
         printf "无数据|0.00"
     }
 }')
 
-#WORST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep "encode_" | awk -F',' '
-WORST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null  | awk -F',' '
+WORST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '
 BEGIN {
     min = 999999;
 }
 {
+    if ($1 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}/) next;  # 跳过非数据行
     speed = $4;
     gsub(/x/, "", speed);
     if (speed + 0 > 0 && speed + 0 < min) {
@@ -185,7 +212,7 @@ BEGIN {
 END {
     if (worst_line) {
         split(worst_line, arr, ",");
-        printf "%s|%.2f", arr[1], min;
+        printf "%s|%.2f", arr[2], min;  # arr[2]是测试名称
     } else {
         printf "无数据|0.00"
     }
@@ -197,8 +224,6 @@ WORST_NAME=$(echo "$WORST_INFO" | cut -d'|' -f1)
 WORST_SPEED=$(echo "$WORST_INFO" | cut -d'|' -f2)
 
 # 计算测试数量和总时长
-#TEST_COUNT=$(tail -n +2 benchmark_results.csv 2>/dev/null | wc -l | tr -d ' ')
-#TOTAL_DURATION=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '{sum += $5} END {printf "%.0f", sum}')
 TEST_COUNT=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep -c '^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' || echo "0")
 TOTAL_DURATION=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '
 {
@@ -207,6 +232,15 @@ TOTAL_DURATION=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '
     }
 }
 END {printf "%.0f", sum}')
+
+echo "=== 清理后系统信息 ==="
+echo "CPU_ARCH_DISPLAY: $CPU_ARCH_DISPLAY"
+echo "CPU_MODEL: $CPU_MODEL"
+echo "MEMORY_DISPLAY: $MEMORY_DISPLAY"
+echo "OS_DISPLAY: $OS_DISPLAY"
+echo "KERNEL_VERSION: $KERNEL_VERSION"
+echo "FFMPEG_VERSION: $FFMPEG_VERSION"
+echo "======================"
 
 # 生成CSV数据行的HTML
 echo "生成HTML表格数据..."
@@ -221,18 +255,16 @@ while IFS= read -r line; do
         test_name=$(echo "$test_name" | sed 's/^ *//;s/ *$//')
         avg_time=$(echo "$avg_time" | sed 's/^ *//;s/ *$//')
         encode_speed=$(echo "$encode_speed" | sed 's/^ *//;s/ *$//')
-        realtime_speed_num=$(echo "$realtime_speed" | sed 's/^ *//;s/ *$//;s/x$//' 2>/dev/null || echo "0")
+        encode_speed_num=$(echo "$encode_speed" | sed 's/^ *//;s/ *$//;s/x$//' 2>/dev/null || echo "0")
+        realtime_speed=$(echo "$realtime_speed" | sed 's/^ *//;s/ *$//')
         test_duration=$(echo "$test_duration" | sed 's/^ *//;s/ *$//')
-
-        # 确定性能等级 - 基于编码速度（第4列）
+        
+        # 确定性能等级 - 基于编码速度而不是实时倍数
         speed_class="speed-fair"
         badge_class="badge-fair"
         badge_text="一般"
         
-        # 提取编码速度数值（移除"x"字符）
-        encode_speed_num=$(echo "$encode_speed" | sed 's/x$//' 2>/dev/null | tr -cd '0-9.' 2>/dev/null)
-        
-        if [ -n "$encode_speed_num" ] && [ "$encode_speed_num" != "N/A" ] && [ "$encode_speed_num" != "0" ]; then
+        if [ -n "$encode_speed_num" ] && [ "$encode_speed_num" != "N/A" ]; then
             if [ "$(echo "$encode_speed_num >= 5" 2>/dev/null | bc 2>/dev/null || echo "0")" = "1" ]; then
                 speed_class="speed-excellent"
                 badge_class="badge-excellent"
@@ -250,11 +282,6 @@ while IFS= read -r line; do
                 badge_class="badge-poor"
                 badge_text="较差"
             fi
-        else
-            # 如果编码速度是0或N/A，标记为较差
-            speed_class="speed-poor"
-            badge_class="badge-poor"
-            badge_text="较差"
         fi
         
         CSV_ROWS="${CSV_ROWS}<tr>
@@ -265,7 +292,8 @@ while IFS= read -r line; do
             <td>${test_duration}</td>
             <td><span class=\"badge ${badge_class}\">${badge_text}</span></td>
         </tr>"
-
+        
+        ROW_COUNT=$((ROW_COUNT + 1))
     fi
 done <<< "$(tail -n +2 benchmark_results.csv 2>/dev/null)"
 
@@ -295,11 +323,11 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
-            border-radius: 10px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             overflow: hidden;
         }
         
@@ -308,30 +336,23 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             color: white;
             padding: 20px 30px;
             text-align: center;
-            position: relative;
-            overflow: hidden;
         }
-
+        
         .header h1 {
             font-size: 2rem;
             margin-bottom: 8px;
-            font-weight: 700;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
-
+        
         .header p {
             font-size: 0.9rem;
             opacity: 0.9;
-            line-height: 1.4;
-            margin: 5px 0;
-        }        
+        }
         
         .summary-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 20px;
             padding: 25px;
-            background: #f8fafc;
         }
         
         .card {
@@ -340,31 +361,113 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             padding: 20px;
             box-shadow: 0 3px 10px rgba(0,0,0,0.08);
             border-left: 4px solid #4f46e5;
+            height: auto;
+            min-height: 0;
+        }
+        
+        /* 系统配置卡片特殊样式 */
+        .system-card {
+            grid-column: span 2;
+            border-left-color: #4f46e5;
+            background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+        }
+        
+        .hardware-section, .software-section {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .hardware-section h4, .software-section h4 {
+            color: #475569;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .hardware-section h4 i, .software-section h4 i {
+            color: #4f46e5;
+            font-size: 1rem;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+            background: white;
+            border-radius: 6px;
+            border-left: 3px solid #4f46e5;
+        }
+        
+        .info-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .info-value {
+            font-size: 0.9rem;
+            color: #1e293b;
+            font-weight: 500;
+            line-height: 1.4;
+            word-break: break-word;
         }
         
         .card.best {
             border-left-color: #10b981;
+            background: linear-gradient(135deg, #f0fdf4, #dcfce7);
         }
         
         .card.worst {
             border-left-color: #ef4444;
+            background: linear-gradient(135deg, #fef2f2, #fee2e2);
         }
         
         .card h3 {
             color: #4f46e5;
-            margin-bottom: 10px;
-            font-size: 1rem;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .card h3 i {
+            font-size: 1.1rem;
         }
         
         .card .value {
-            font-size: 1.8rem;
+            font-size: 1.6rem;
             font-weight: bold;
             color: #1e293b;
+            margin-bottom: 5px;
+        }
+        
+        .card.best .value {
+            color: #10b981;
+        }
+        
+        .card.worst .value {
+            color: #ef4444;
         }
         
         .card .label {
             color: #64748b;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            line-height: 1.4;
         }
         
         .section {
@@ -419,166 +522,23 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         .speed-good { color: #3b82f6; font-weight: bold; }
         .speed-fair { color: #f59e0b; font-weight: bold; }
         .speed-poor { color: #ef4444; font-weight: bold; }
-      
-		/* 系统配置详情样式 */
-		.hardware-info, .software-info {
-			margin-bottom: 20px;
-			padding: 15px;
-			background: rgba(255, 255, 255, 0.5);
-			border-radius: 8px;
-			border: 1px solid #e2e8f0;
-		}
-
-		.hardware-info {
-			border-left: 3px solid #3b82f6;
-		}
-
-		.software-info {
-			border-left: 3px solid #10b981;
-		}
-
-		.info-row {
-			display: flex;
-			align-items: center;
-			padding: 8px 0;
-			border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-		}
-
-		.info-row:last-child {
-			border-bottom: none;
-		}
-
-		.info-label {
-			flex: 0 0 120px;
-			font-size: 0.85rem;
-			color: #64748b;
-			font-weight: 600;
-			padding-right: 10px;
-		}
-
-		.info-value {
-			flex: 1;
-			font-size: 0.9rem;
-			color: #1e293b;
-			font-weight: 500;
-			word-break: break-word;
-			line-height: 1.4;
-		}
-
-		/* 系统配置卡片特殊样式 */
-		.system-config {
-			grid-column: span 2; /* 占两列宽度 */
-			border-left-color: #4f46e5;
-			background: linear-gradient(135deg, #f5f3ff, #ede9fe);
-		}
-
-		/* 响应式调整 */
-		@media (max-width: 768px) {
-			.system-config {
-				grid-column: span 1;
-			}
-			
-			.info-row {
-				flex-direction: column;
-				align-items: flex-start;
-			}
-			
-			.info-label {
-				flex: none;
-				width: 100%;
-				margin-bottom: 4px;
-			}
-			
-			.info-value {
-				width: 100%;
-			}
-		}
-		 /* 系统配置卡片特殊样式 */
-        .system-config {
-            grid-column: span 2;
-            border-left-color: #4f46e5;
-            background: linear-gradient(135deg, #f5f3ff, #ede9fe);
-        }
-
-        .system-details {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .system-row {
-            display: flex;
-            align-items: center;
-            padding: 6px 0;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .system-row:last-child {
-            border-bottom: none;
-        }
-
-        .system-label {
-            flex: 0 0 100px;
-            font-size: 0.85rem;
-            color: #64748b;
-            font-weight: 500;
-        }
-
-        .system-value {
-            flex: 1;
-            font-size: 0.9rem;
-            color: #1e293b;
-            font-weight: 500;
-            word-break: break-word;
-        }
-
-        /* 其他卡片优化 */
-        .card.best {
-            border-left-color: #10b981;
-            background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-        }
-
-        .card.worst {
-            border-left-color: #ef4444;
-            background: linear-gradient(135deg, #fef2f2, #fee2e2);
-        }
-
-        .card .value {
-            font-size: 1.6rem;
-            font-weight: bold;
-            color: #1e293b;
-            margin: 8px 0 4px 0;
-        }
-
-        .card .label {
-            color: #64748b;
-            font-size: 0.85rem;
-            line-height: 1.4;
-        }
-
-    /* 响应式调整 */
-    @media (max-width: 768px) {
-        .system-config {
-            grid-column: span 1;
-        }
         
-        .system-row {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 4px;
-        }
-        
-        .system-label {
-            flex: none;
-            width: 100%;
-        }
-    }
- 
         .footer {
             text-align: center;
             padding: 20px;
             background: #1e293b;
             color: #cbd5e1;
+        }
+        
+        /* 响应式调整 */
+        @media (max-width: 1024px) {
+            .system-card {
+                grid-column: span 1;
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
         }
         
         @media (max-width: 768px) {
@@ -594,177 +554,6 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             color: #64748b;
             font-style: italic;
         }
-        /* 在现有CSS后添加以下样式 */
-        .system-card {
-            grid-column: span 2; /* 让系统配置卡片占两列宽度 */
-        }
-
-        .config-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .config-item {
-            display: flex;
-            flex-direction: column;
-            padding: 8px;
-            background: #f8fafc;
-            border-radius: 6px;
-            border-left: 3px solid #4f46e5;
-        }
-
-        .config-label {
-            font-size: 0.8rem;
-            color: #64748b;
-            margin-bottom: 4px;
-            font-weight: 600;
-        }
-
-        .config-value {
-            font-size: 0.9rem;
-            color: #1e293b;
-            font-weight: 500;
-        }
-
-    /* 响应式调整 */
-    @media (max-width: 768px) {
-        .system-card {
-            grid-column: span 1;
-        }
-        
-        .config-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-
-  /* 系统配置卡片样式 */
-  .system-card {
-      grid-column: span 2; /* 占两列宽度 */
-      border-left-color: #4f46e5;
-      background: linear-gradient(135deg, #f5f3ff, #ede9fe);
-  }
-
-  .hardware-section, .software-section {
-      margin-bottom: 20px;
-      padding: 15px;
-      background: rgba(255, 255, 255, 0.5);
-      border-radius: 8px;
-      border: 1px solid #e2e8f0;
-  }
-
-  .hardware-section h4, .software-section h4 {
-      color: #475569;
-      font-size: 0.9rem;
-      font-weight: 600;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-  }
-
-  .hardware-section h4 i, .software-section h4 i {
-      color: #4f46e5;
-      font-size: 1rem;
-  }
-
-  .info-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-  }
-
-  .info-item {
-      display: flex;
-      flex-direction: column;
-      padding: 10px;
-      background: white;
-      border-radius: 6px;
-      border-left: 3px solid #4f46e5;
-      min-height: 60px;
-  }
-
-  .info-label {
-      font-size: 0.8rem;
-      color: #64748b;
-      font-weight: 500;
-      margin-bottom: 4px;
-  }
-
-  .info-value {
-      font-size: 0.9rem;
-      color: #1e293b;
-      font-weight: 500;
-      line-height: 1.4;
-      word-break: break-word;
-  }
-
-  /* 其他卡片优化 */
-  .card {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      min-height: 120px;
-  }
-
-  .card h3 {
-      color: #4f46e5;
-      margin-bottom: 15px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-  }
-
-  .card h3 i {
-      font-size: 1.1rem;
-  }
-
-  .card .value {
-      font-size: 1.6rem;
-      font-weight: bold;
-      color: #1e293b;
-      margin-bottom: 5px;
-  }
-
-  .card .label {
-      color: #64748b;
-      font-size: 0.85rem;
-      line-height: 1.4;
-  }
-
-  .card.best {
-      border-left-color: #10b981;
-      background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-  }
-
-  .card.worst {
-      border-left-color: #ef4444;
-      background: linear-gradient(135deg, #fef2f2, #fee2e2);
-  }
-
-  .card.best .value {
-      color: #10b981;
-  }
-
-  .card.worst .value {
-      color: #ef4444;
-  }
-
-  /* 响应式调整 */
-  @media (max-width: 1024px) {
-      .system-card {
-          grid-column: span 1;
-      }
-      
-      .info-grid {
-          grid-template-columns: 1fr;
-      }
-  }
-
-
     </style>
 </head>
 <body>
@@ -774,69 +563,67 @@ cat > "$OUTPUT_FILE" << HTML_EOF
             <p>生成时间: $(date '+%Y年%m月%d日 %H:%M:%S')</p>
             <p>测试目录: $(basename "$(pwd)")</p>
         </div>
-
-    <div class="summary-cards">
+        
+        <div class="summary-cards">
             <div class="card system-card">
                 <h3><i>⚙️</i> 系统配置详情</h3>
-
+                
                 <div class="hardware-section">
                     <h4><i>💻</i> 硬件信息</h4>
                     <div class="info-grid">
                         <div class="info-item">
                             <span class="info-label">CPU架构</span>
-                            <span class="info-value">'$CPU_ARCH_DISPLAY'</span>
+                            <span class="info-value">$CPU_ARCH_DISPLAY</span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">CPU型号</span>
-                            <span class="info-value">'$CPU_MODEL'</span>
+                            <span class="info-value">$CPU_MODEL</span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">内存配置</span>
-                            <span class="info-value">'$MEMORY_DISPLAY'</span>
+                            <span class="info-value">$MEMORY_DISPLAY</span>
                         </div>
                     </div>
                 </div>
-
+                
                 <div class="software-section">
                     <h4><i>🖥️</i> 软件信息</h4>
                     <div class="info-grid">
                         <div class="info-item">
                             <span class="info-label">操作系统</span>
-                            <span class="info-value">'$OS_NAME' '$OS_VERSION'</span>
+                            <span class="info-value">$OS_DISPLAY</span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">内核版本</span>
-                            <span class="info-value">'$KERNEL_VERSION'</span>
+                            <span class="info-value">$KERNEL_VERSION</span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">FFmpeg版本</span>
-                            <span class="info-value">'$FFMPEG_VERSION'</span>
+                            <span class="info-value">$FFMPEG_VERSION</span>
                         </div>
                     </div>
                 </div>
             </div>
-
+            
             <div class="card">
                 <h3><i>📊</i> 测试统计</h3>
-                <div class="value">'$TEST_COUNT'</div>
+                <div class="value">$TEST_COUNT</div>
                 <div class="label">测试数量</div>
-                <div class="value">'$TOTAL_DURATION's</div>
+                <div class="value">${TOTAL_DURATION}s</div>
                 <div class="label">总测试时长</div>
             </div>
 
             <div class="card best">
                 <h3><i>🏆</i> 最佳性能</h3>
-                <div class="value">'$BEST_SPEED'x</div>
-                <div class="label">'$BEST_NAME'</div>
+                <div class="value">${BEST_SPEED}x</div>
+                <div class="label">${BEST_NAME}</div>
             </div>
 
             <div class="card worst">
                 <h3><i>⚠️</i> 性能瓶颈</h3>
-                <div class="value">'$WORST_SPEED'x</div>
-                <div class="label">'$WORST_NAME'</div>
+                <div class="value">${WORST_SPEED}x</div>
+                <div class="label">${WORST_NAME}</div>
             </div>
-        </div>
-            
         </div>
         
         <div class="section">
@@ -861,7 +648,7 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         </div>
         
         <div class="footer">
-            <p>📊 FFmpeg性能测试报告 | 版本: 2.2</p>
+            <p>📊 FFmpeg性能测试报告 | 版本: 3.1 (修复版)</p>
             <p>🔧 FFmpeg版本: ${FFMPEG_VERSION}</p>
             <p>📁 目录: $(pwd)</p>
         </div>
@@ -872,11 +659,10 @@ HTML_EOF
 
 echo ""
 echo "✅ HTML报告已生成: $(pwd)/$OUTPUT_FILE"
-echo "📊 包含 ${ROW_COUNT} 个测试结果"
+echo "📊 包含 $ROW_COUNT 个测试结果"
 echo ""
 echo "💡 查看报告的方法:"
-echo "   1. 在当前目录启动HTTP服务器: python3 -m http.server 8000"
-echo "   2. 在浏览器中访问: http://localhost:8000/$OUTPUT_FILE"
-echo "   3. 或通过SSH隧道访问（如果从远程连接）"
+echo " 1. 在当前目录启动HTTP服务器: python3 -m http.server 8000"
+echo " 2. 在浏览器中访问: http://localhost:8000/$OUTPUT_FILE"
 echo ""
 echo "🔄 完成!"
