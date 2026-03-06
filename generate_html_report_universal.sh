@@ -121,10 +121,17 @@ if [ "$TOTAL_PHYSICAL_CORES" = "0" ]; then
 fi
 
 # 格式化显示
-if [ "$CPU_SOCKETS" != "0" ] && [ "$CPU_SOCKETS" != "1" ]; then
-    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心 × ${CPU_SOCKETS}P)"
+#if [ "$CPU_SOCKETS" != "0" ] && [ "$CPU_SOCKETS" != "1" ]; then
+#    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心 × ${CPU_SOCKETS}P)"
+#else
+#    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心)"
+#fi
+
+# 格式化CPU信息
+if [ "$CPU_SOCKETS" != "未知" ] && [ "$CPU_SOCKETS" -gt 1 ]; then
+    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心 × ${CPU_SOCKETS}P)"
 else
-    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}物理核心)"
+    CPU_ARCH_DISPLAY="${CPU_CORES}线程 (${TOTAL_PHYSICAL_CORES}核心)"
 fi
 
 if [ "$MEMORY_CHANNELS" != "0" ]; then
@@ -143,7 +150,8 @@ fi
 # 解析最佳和最差性能
 echo "分析性能数据..."
 
-BEST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep "encode_" | awk -F',' '
+#BEST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep "encode_" | awk -F',' '
+BEST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '
 {
     speed = $4;
     gsub(/x/, "", speed);
@@ -161,7 +169,8 @@ END {
     }
 }')
 
-WORST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep "encode_" | awk -F',' '
+#WORST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep "encode_" | awk -F',' '
+WORST_INFO=$(tail -n +2 benchmark_results.csv 2>/dev/null  | awk -F',' '
 BEGIN {
     min = 999999;
 }
@@ -188,8 +197,16 @@ WORST_NAME=$(echo "$WORST_INFO" | cut -d'|' -f1)
 WORST_SPEED=$(echo "$WORST_INFO" | cut -d'|' -f2)
 
 # 计算测试数量和总时长
-TEST_COUNT=$(tail -n +2 benchmark_results.csv 2>/dev/null | wc -l | tr -d ' ')
-TOTAL_DURATION=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '{sum += $5} END {printf "%.0f", sum}')
+#TEST_COUNT=$(tail -n +2 benchmark_results.csv 2>/dev/null | wc -l | tr -d ' ')
+#TOTAL_DURATION=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '{sum += $5} END {printf "%.0f", sum}')
+TEST_COUNT=$(tail -n +2 benchmark_results.csv 2>/dev/null | grep -c '^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' || echo "0")
+TOTAL_DURATION=$(tail -n +2 benchmark_results.csv 2>/dev/null | awk -F',' '
+{
+    if ($1 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}/) {
+        sum += $6;  # 第6列是测试耗时
+    }
+}
+END {printf "%.0f", sum}')
 
 # 生成CSV数据行的HTML
 echo "生成HTML表格数据..."
@@ -206,22 +223,25 @@ while IFS= read -r line; do
         encode_speed=$(echo "$encode_speed" | sed 's/^ *//;s/ *$//')
         realtime_speed_num=$(echo "$realtime_speed" | sed 's/^ *//;s/ *$//;s/x$//' 2>/dev/null || echo "0")
         test_duration=$(echo "$test_duration" | sed 's/^ *//;s/ *$//')
-        
-        # 确定性能等级
+
+        # 确定性能等级 - 基于编码速度（第4列）
         speed_class="speed-fair"
         badge_class="badge-fair"
         badge_text="一般"
         
-        if [ -n "$realtime_speed_num" ] && [ "$realtime_speed_num" != "N/A" ]; then
-            if [ "$(echo "$realtime_speed_num >= 5" 2>/dev/null | bc)" = "1" ]; then
+        # 提取编码速度数值（移除"x"字符）
+        encode_speed_num=$(echo "$encode_speed" | sed 's/x$//' 2>/dev/null | tr -cd '0-9.' 2>/dev/null)
+        
+        if [ -n "$encode_speed_num" ] && [ "$encode_speed_num" != "N/A" ] && [ "$encode_speed_num" != "0" ]; then
+            if [ "$(echo "$encode_speed_num >= 5" 2>/dev/null | bc 2>/dev/null || echo "0")" = "1" ]; then
                 speed_class="speed-excellent"
                 badge_class="badge-excellent"
                 badge_text="优秀"
-            elif [ "$(echo "$realtime_speed_num >= 2" 2>/dev/null | bc)" = "1" ]; then
+            elif [ "$(echo "$encode_speed_num >= 2" 2>/dev/null | bc 2>/dev/null || echo "0")" = "1" ]; then
                 speed_class="speed-good"
                 badge_class="badge-good"
                 badge_text="良好"
-            elif [ "$(echo "$realtime_speed_num >= 1" 2>/dev/null | bc)" = "1" ]; then
+            elif [ "$(echo "$encode_speed_num >= 1" 2>/dev/null | bc 2>/dev/null || echo "0")" = "1" ]; then
                 speed_class="speed-fair"
                 badge_class="badge-fair"
                 badge_text="一般"
@@ -230,18 +250,22 @@ while IFS= read -r line; do
                 badge_class="badge-poor"
                 badge_text="较差"
             fi
+        else
+            # 如果编码速度是0或N/A，标记为较差
+            speed_class="speed-poor"
+            badge_class="badge-poor"
+            badge_text="较差"
         fi
         
         CSV_ROWS="${CSV_ROWS}<tr>
             <td>${test_name}</td>
             <td>${avg_time}</td>
-            <td>${encode_speed}</td>
-            <td class=\"${speed_class}\">${realtime_speed}</td>
+            <td class=\"${speed_class}\">${encode_speed}</td>
+            <td>${realtime_speed}</td>
             <td>${test_duration}</td>
             <td><span class=\"badge ${badge_class}\">${badge_text}</span></td>
         </tr>"
-        
-        ROW_COUNT=$((ROW_COUNT + 1))
+
     fi
 done <<< "$(tail -n +2 benchmark_results.csv 2>/dev/null)"
 
@@ -395,8 +419,81 @@ cat > "$OUTPUT_FILE" << HTML_EOF
         .speed-good { color: #3b82f6; font-weight: bold; }
         .speed-fair { color: #f59e0b; font-weight: bold; }
         .speed-poor { color: #ef4444; font-weight: bold; }
-       
-        /* 系统配置卡片特殊样式 */
+      
+		/* 系统配置详情样式 */
+		.hardware-info, .software-info {
+			margin-bottom: 20px;
+			padding: 15px;
+			background: rgba(255, 255, 255, 0.5);
+			border-radius: 8px;
+			border: 1px solid #e2e8f0;
+		}
+
+		.hardware-info {
+			border-left: 3px solid #3b82f6;
+		}
+
+		.software-info {
+			border-left: 3px solid #10b981;
+		}
+
+		.info-row {
+			display: flex;
+			align-items: center;
+			padding: 8px 0;
+			border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+		}
+
+		.info-row:last-child {
+			border-bottom: none;
+		}
+
+		.info-label {
+			flex: 0 0 120px;
+			font-size: 0.85rem;
+			color: #64748b;
+			font-weight: 600;
+			padding-right: 10px;
+		}
+
+		.info-value {
+			flex: 1;
+			font-size: 0.9rem;
+			color: #1e293b;
+			font-weight: 500;
+			word-break: break-word;
+			line-height: 1.4;
+		}
+
+		/* 系统配置卡片特殊样式 */
+		.system-config {
+			grid-column: span 2; /* 占两列宽度 */
+			border-left-color: #4f46e5;
+			background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+		}
+
+		/* 响应式调整 */
+		@media (max-width: 768px) {
+			.system-config {
+				grid-column: span 1;
+			}
+			
+			.info-row {
+				flex-direction: column;
+				align-items: flex-start;
+			}
+			
+			.info-label {
+				flex: none;
+				width: 100%;
+				margin-bottom: 4px;
+			}
+			
+			.info-value {
+				width: 100%;
+			}
+		}
+		 /* 系统配置卡片特殊样式 */
         .system-config {
             grid-column: span 2;
             border-left-color: #4f46e5;
